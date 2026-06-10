@@ -1,0 +1,46 @@
+Business Source License 1.1
+
+License text copyright (c) 2026 Jon Hammant. All Rights Reserved.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
+-----------------------------------------------------------------------------
+
+Parameters
+
+Licensor:             Jon Hammant
+
+Licensed Work:        Loom — the version of the Loom software made available
+                      under this License.
+
+Additional Use Grant: You may make production use of the Licensed Work,
+                      provided you do not offer the Licensed Work to third
+                      parties as a hosted or managed service that competes with
+                      the Licensor's commercial Loom offering.
+
+Change Date:          2030-06-10
+
+Change License:       Apache License, Version 2.0
+
+-----------------------------------------------------------------------------
+
+Summary (non-binding, for convenience only)
+
+You may copy, modify, create derivative works of, redistribute, and make
+non-production use of the Licensed Work. You may make production use of the
+Licensed Work subject to the Additional Use Grant above — in particular, you may
+NOT provide it to third parties as a hosted or managed service that competes
+with the Licensor's commercial Loom offering before the Change Date. On the
+Change Date, the Licensed Work becomes available under the Change License
+(Apache License, Version 2.0), and the restrictions of this License no longer
+apply.
+
+-----------------------------------------------------------------------------
+
+NOTICE — before public release:
+
+  1. Append the full canonical text of the Business Source License 1.1 (the
+     "Terms" and "Covenants" sections) from https://mariadb.com/bsl11/ below
+     this notice. The Parameters block above is the operative configuration of
+     that license for this project.
+  2. Have the complete license reviewed by legal counsel. This file is a
+     release-prep template, not legal advice.

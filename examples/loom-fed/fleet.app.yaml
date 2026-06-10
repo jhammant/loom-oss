@@ -1,0 +1,12 @@
+name: loom-fed
+runtime: python
+port: 8090
+access: private
+
+manifest_version: 2
+provides_service: federation   # Loom mounts the live registry into this app
+metadata:
+  description: Data-federation gateway — grant-checked cross-app dataset reads.
+  tags: [service, federation, data]
+health:
+  path: /health

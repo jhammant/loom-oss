@@ -1,0 +1,16 @@
+name: data-provider
+runtime: python
+port: 8100
+access: private
+
+manifest_version: 2
+metadata:
+  description: Provides an `items` dataset to the fleet via federation.
+  tags: [demo, data, provider]
+health:
+  path: /health
+data:
+  provides:
+    - name: items
+      api: rest
+      path: /items

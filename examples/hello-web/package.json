@@ -1,0 +1,10 @@
+{
+  "name": "hello-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loom sample Node web app",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

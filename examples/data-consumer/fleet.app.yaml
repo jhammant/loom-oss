@@ -1,0 +1,14 @@
+name: data-consumer
+runtime: python
+port: 3000
+access: public
+
+manifest_version: 2
+metadata:
+  description: Reads the `items` dataset through the federation gateway.
+  tags: [demo, data, consumer]
+health:
+  path: /health
+data:
+  consumes:
+    - name: items

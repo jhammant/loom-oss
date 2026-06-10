@@ -1,0 +1,46 @@
+# Loom reverse proxy — Traefik v3, configured entirely via flags.
+#
+# Routes are NOT discovered from Docker labels. The Loom CLI writes one
+# dynamic-config file per app into ./dynamic, and Traefik's file provider
+# picks them up live. This keeps Loom in control of the route table (the seed
+# of the future Library), needs no Docker socket access, and avoids the
+# Traefik Docker-provider API-version incompatibility with newer daemons.
+#
+# Ports are parameterised so the same setup works whether HTTPS is on the
+# standard 443 or an alternate port (e.g. 8443 when another service owns 443).
+# The Loom CLI exports LOOM_HTTP_PORT / LOOM_HTTPS_PORT from fleet/config.json.
+services:
+  traefik:
+    image: traefik:v3.3
+    container_name: loom-proxy
+    restart: unless-stopped
+    command:
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # websecure listens on the same port number we publish, so Traefik's
+      # HTTP->HTTPS redirect emits the correct external port automatically.
+      - "--entrypoints.websecure.address=:${LOOM_HTTPS_PORT:-8443}"
+      - "--providers.file.directory=/dynamic"
+      - "--providers.file.watch=true"
+      - "--api.dashboard=true"
+      - "--api.insecure=true" # dashboard on :8080, localhost-only mapping below
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      # Bound to loopback: a local fleet host, not exposed to the LAN.
+      - "127.0.0.1:${LOOM_HTTP_PORT:-80}:80"
+      - "127.0.0.1:${LOOM_HTTPS_PORT:-8443}:${LOOM_HTTPS_PORT:-8443}"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./dynamic:/dynamic:ro
+      - ./certs:/certs:ro
+    networks:
+      - loom
+
+# The `loom` network is created and owned by the Loom CLI so that app
+# containers (run outside this compose project) join the same network and are
+# reachable by Traefik over it by container name.
+networks:
+  loom:
+    external: true

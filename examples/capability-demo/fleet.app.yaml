@@ -1,0 +1,35 @@
+name: capability-demo
+runtime: node
+port: 3000
+access: public
+
+# --- v2 contract (all optional; omit it all and you get a plain v1 app) ---
+manifest_version: 2
+
+metadata:
+  description: A demo app that exposes a search capability and an OpenAPI spec.
+  tags: [demo, search, reference]
+  owner: loom
+
+health:
+  path: /health
+
+capabilities:
+  - id: search
+    kind: http
+    path: /search
+    description: Search the demo corpus for items matching a query.
+    input_schema:
+      type: object
+      properties:
+        q: { type: string }
+      required: [q]
+    output_schema:
+      type: object
+      properties:
+        query: { type: string }
+        results: { type: array, items: { type: string } }
+  - id: api
+    kind: openapi
+    path: /openapi.json
+    description: OpenAPI 3.1 spec describing this app's HTTP surface.

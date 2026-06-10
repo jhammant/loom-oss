@@ -1,0 +1,12 @@
+name: hello-web        # becomes the subdomain; must be DNS-safe
+runtime: node          # node | python | static | docker
+port: 3000             # the port the app binds; the app reads $PORT
+access: public         # public | gated | private
+
+# Optional v2 contract fields (a plain v1 manifest omits all of these):
+manifest_version: 2
+metadata:
+  description: Minimal Node web app demonstrating the Loom fleet host.
+  tags: [example, node, web]
+health:
+  path: /healthz       # hello-web already serves this

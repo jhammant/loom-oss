@@ -1,0 +1,4 @@
+name: hello-static     # becomes the subdomain; must be DNS-safe
+runtime: static        # node | python | static | docker
+port: 80               # static sites are served by nginx on port 80
+access: public         # public | private

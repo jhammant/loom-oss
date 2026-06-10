@@ -1,0 +1,12 @@
+name: loom-wallet
+runtime: python
+port: 8080
+access: private          # a backend service — not publicly routed
+
+manifest_version: 2
+provides_service: wallet  # apps that `consumes: [wallet]` get wired to this
+metadata:
+  description: Credit ledger shared service (app-to-app authed).
+  tags: [service, wallet, credits]
+health:
+  path: /health

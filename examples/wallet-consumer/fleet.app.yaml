@@ -1,0 +1,14 @@
+name: wallet-consumer
+runtime: python
+port: 3000
+access: public
+
+manifest_version: 2
+metadata:
+  description: Demo app that charges the shared wallet service via the Loom SDK.
+  tags: [demo, wallet, sdk]
+health:
+  path: /health
+consumes:
+  - service: wallet
+    scope: charge
