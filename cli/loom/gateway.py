@@ -3,28 +3,30 @@
 Concerns, all optional and driven by fleet/config.json's `gateway` block:
 
   * relay   — a NATIVE (non-Docker) TCP listener the external edge proxy forwards
-              to. OrbStack only forwards Docker-published ports on loopback, so a
-              native relay is what makes Loom reachable over the LAN / tailnet.
-  * auth    — a forwardAuth middleware (e.g. Authelia) for the `gated` tier. The
-              Traefik container can't reach the LAN, so a second native relay
-              bridges container -> host.docker.internal -> Authelia.
+              to. Some Docker setups (e.g. OrbStack) only forward published ports
+              on loopback, so a native relay is what makes Loom reachable over the
+              LAN / tailnet. It is supervised cross-platform: launchd (macOS),
+              a systemd --user unit (Linux), or a plain background process.
+  * gated   — the `gated` tier is enforced at the edge proxy via a forwardAuth
+              (SSO) middleware Loom generates (see write_edge_gated).
   * tailnet — per-app `tailscale serve` for PRIVATE apps: a stable tailnet-only
               URL without exposing them publicly.
 
-Relays run as launchd agents so they survive reboots. The external edge route
-itself lives off-box; see proxy/gateway/edge-loom.yml.
+The external edge route itself lives off-box; see proxy/gateway/edge-loom.yml.
 """
 from __future__ import annotations
 
+import os
 import shutil
+import signal
 import subprocess
+import sys
 from pathlib import Path
 
 from .config import paths
 from .util import LoomError, info, ok, warn
 
 RELAY_LABEL = "dev.loom.gateway-relay"
-AUTH_RELAY_LABEL = "dev.loom.auth-relay"
 AUTH_MIDDLEWARE = "loom-authelia"
 AUTH_FILE = "loom-auth.yml"
 
@@ -38,72 +40,178 @@ def _socat() -> str:
         p = shutil.which(c) or (c if Path(c).exists() else None)
         if p:
             return p
-    raise LoomError("socat not found — install with `brew install socat` for the gateway relay")
+    raise LoomError("socat not found — install it (e.g. `brew install socat` or "
+                    "`apt-get install socat`) for the gateway relay")
 
 
-# --- native relays (launchd) ---------------------------------------------------
+# --- native relay (cross-platform supervision) ---------------------------------
+# Survives reboots via launchd (macOS) or a systemd --user unit (Linux); on hosts
+# with neither it runs as a supervised background process (no reboot persistence).
+# Override the choice with gateway.relay_supervisor = launchd | systemd | process.
 
+def _state_dir() -> Path:
+    d = Path.home() / ".loom"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _relay_args(cfg: dict) -> list:
+    port = _gw(cfg).get("relay_port", 8444)
+    return [_socat(), f"TCP-LISTEN:{port},fork,reuseaddr",
+            f"TCP-CONNECT:127.0.0.1:{cfg['https_port']}"]
+
+
+def _systemd_user_ok() -> bool:
+    return bool(shutil.which("systemctl")) and subprocess.run(
+        ["systemctl", "--user", "show-environment"], capture_output=True).returncode == 0
+
+
+def _backend(cfg: dict) -> str:
+    forced = _gw(cfg).get("relay_supervisor")
+    if forced in ("launchd", "systemd", "process"):
+        return forced
+    if sys.platform == "darwin":
+        return "launchd"
+    return "systemd" if _systemd_user_ok() else "process"
+
+
+# launchd (macOS)
 def _plist_path(label: str) -> Path:
     return Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
-
-
-def _write_relay_plist(label: str, listen_port: int, target: str) -> None:
-    socat = _socat()
-    p = _plist_path(label)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>{label}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>{socat}</string>
-    <string>TCP-LISTEN:{listen_port},fork,reuseaddr</string>
-    <string>TCP-CONNECT:{target}</string>
-  </array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/{label}.log</string>
-  <key>StandardErrorPath</key><string>/tmp/{label}.log</string>
-</dict>
-</plist>
-""")
 
 
 def _launchctl(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["launchctl", *args], text=True, capture_output=True, check=False)
 
 
-def _agent_running(label: str) -> bool:
-    r = _launchctl("list")
-    return any(line.endswith(label) for line in (r.stdout or "").splitlines())
-
-
-def _relay_load(label: str, listen_port: int, target: str) -> None:
-    _write_relay_plist(label, listen_port, target)
-    _launchctl("unload", str(_plist_path(label)))
-    r = _launchctl("load", str(_plist_path(label)))
+def _launchd_up(label: str, args: list) -> None:
+    p = _plist_path(label)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    prog = "".join(f"    <string>{a}</string>\n" for a in args)
+    p.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" '
+        '"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+        '<plist version="1.0"><dict>\n'
+        f"  <key>Label</key><string>{label}</string>\n"
+        "  <key>ProgramArguments</key>\n  <array>\n"
+        f"{prog}  </array>\n"
+        "  <key>RunAtLoad</key><true/>\n  <key>KeepAlive</key><true/>\n"
+        f"  <key>StandardOutPath</key><string>/tmp/{label}.log</string>\n"
+        f"  <key>StandardErrorPath</key><string>/tmp/{label}.log</string>\n"
+        "</dict></plist>\n"
+    )
+    _launchctl("unload", str(p))
+    r = _launchctl("load", str(p))
     if r.returncode != 0:
         raise LoomError(f"failed to load {label}: {r.stderr.strip()}")
 
 
-def _relay_unload(label: str) -> None:
+def _launchd_down(label: str) -> None:
     _launchctl("unload", str(_plist_path(label)))
 
 
-def relay_running() -> bool:
-    return _agent_running(RELAY_LABEL)
+def _launchd_running(label: str) -> bool:
+    r = _launchctl("list")
+    return any(line.endswith(label) for line in (r.stdout or "").splitlines())
+
+
+# systemd --user (Linux)
+def _unit_path(label: str) -> Path:
+    return Path.home() / ".config" / "systemd" / "user" / f"{label}.service"
+
+
+def _systemctl(*args: str) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(["systemctl", "--user", *args], text=True, capture_output=True, check=False)
+    except FileNotFoundError:
+        return subprocess.CompletedProcess(args, 1, "", "systemctl not found")
+
+
+def _systemd_up(label: str, args: list) -> None:
+    u = _unit_path(label)
+    u.parent.mkdir(parents=True, exist_ok=True)
+    u.write_text(
+        "[Unit]\nDescription=Loom gateway relay\n\n"
+        f"[Service]\nExecStart={' '.join(args)}\nRestart=always\n\n"
+        "[Install]\nWantedBy=default.target\n"
+    )
+    _systemctl("daemon-reload")
+    r = _systemctl("enable", "--now", f"{label}.service")
+    if r.returncode != 0:
+        raise LoomError(f"failed to start {label}: {(r.stderr or r.stdout).strip()}")
+
+
+def _systemd_down(label: str) -> None:
+    _systemctl("disable", "--now", f"{label}.service")
+
+
+def _systemd_running(label: str) -> bool:
+    return _systemctl("is-active", "--quiet", f"{label}.service").returncode == 0
+
+
+# supervised process (any OS; no reboot persistence)
+def _pidfile(label: str) -> Path:
+    return _state_dir() / f"{label}.pid"
+
+
+def _proc_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+    return True
+
+
+def _process_running(label: str) -> bool:
+    f = _pidfile(label)
+    if not f.exists():
+        return False
+    try:
+        return _proc_alive(int(f.read_text().strip()))
+    except Exception:
+        return False
+
+
+def _process_up(label: str, args: list) -> None:
+    if _process_running(label):
+        return
+    log = open(_state_dir() / f"{label}.log", "ab")
+    proc = subprocess.Popen(args, stdout=log, stderr=log, start_new_session=True)
+    _pidfile(label).write_text(str(proc.pid))
+
+
+def _process_down(label: str) -> None:
+    f = _pidfile(label)
+    if not f.exists():
+        return
+    try:
+        os.kill(int(f.read_text().strip()), signal.SIGTERM)
+    except Exception:
+        pass
+    f.unlink(missing_ok=True)
+
+
+# dispatch over the chosen backend
+def relay_running(cfg: dict) -> bool:
+    return {"launchd": _launchd_running, "systemd": _systemd_running,
+            "process": _process_running}[_backend(cfg)](RELAY_LABEL)
 
 
 def relay_up(cfg: dict) -> None:
-    port = _gw(cfg).get("relay_port", 8444)
-    _relay_load(RELAY_LABEL, port, f"127.0.0.1:{cfg['https_port']}")
-    ok(f"relay up (:{port} → Loom :{cfg['https_port']})")
+    b = _backend(cfg)
+    {"launchd": _launchd_up, "systemd": _systemd_up, "process": _process_up}[b](
+        RELAY_LABEL, _relay_args(cfg))
+    ok(f"relay up (:{_gw(cfg).get('relay_port', 8444)} → Loom :{cfg['https_port']}, via {b})")
 
 
 def relay_down(cfg: dict) -> None:
-    _relay_unload(RELAY_LABEL)
+    b = _backend(cfg)
+    {"launchd": _launchd_down, "systemd": _systemd_down, "process": _process_down}[b](RELAY_LABEL)
     ok("relay down")
 
 
@@ -117,13 +225,19 @@ def relay_down(cfg: dict) -> None:
 EDGE_GATED_FILE = "edge-loom-gated.yml"
 
 
-def lan_ip() -> str:
-    """This machine's primary LAN IP (what the edge proxies to). Auto-detected so
-    a DHCP change doesn't silently break the public path — re-run `loom gateway sync`."""
+def lan_ip(cfg: dict | None = None) -> str:
+    """This machine's IP on the interface that reaches the edge (what the edge
+    proxies back to). Probes the route to the edge host if known (else a public
+    IP) so it picks the real LAN interface, not a Docker/VPN virtual one. Auto-
+    detected so a DHCP change doesn't silently break the public path."""
     import socket
+    target = "8.8.8.8"
+    host = (_gw(cfg or {}).get("edge_host") or "").split("@")[-1].split(":")[0].strip()
+    if host:
+        target = host
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("10.255.255.255", 1))
+        s.connect((target, 80))
         return s.getsockname()[0]
     except Exception:
         return "127.0.0.1"
@@ -136,7 +250,7 @@ def write_edge_main(cfg: dict):
     domain = cfg.get("public_domain") or ""
     if not domain:
         return None
-    ip = lan_ip()
+    ip = lan_ip(cfg)
     port = _gw(cfg).get("relay_port", 8444)
     esc = domain.replace(".", "\\.")
     rule = "HostRegexp(`^[a-z0-9-]+\\." + esc + "$`)"
@@ -193,7 +307,7 @@ def sync(cfg: dict) -> None:
         subprocess.run(["ssh", "-i", key, "-o", "BatchMode=yes", host,
                         f"pct push {vmid} /tmp/{dest} /etc/traefik/dynamic/{dest} && rm /tmp/{dest}"],
                        check=True, capture_output=True)
-    ok(f"edge synced → loom @ {lan_ip()}:{_gw(cfg).get('relay_port', 8444)}")
+    ok(f"edge synced → loom @ {lan_ip(cfg)}:{_gw(cfg).get('relay_port', 8444)}")
 
 
 def auth_enabled(cfg: dict) -> bool:
@@ -282,13 +396,13 @@ def ensure(cfg: dict) -> None:
     stale = paths().dynamic / AUTH_FILE  # remove the abandoned loom-side auth file
     if stale.exists():
         stale.unlink()
-    if not relay_running():
+    if not relay_running(cfg):
         relay_up(cfg)
 
 
 def status(cfg: dict) -> None:
     gw = _gw(cfg)
-    if relay_running():
+    if relay_running(cfg):
         ok(f"relay running (:{gw.get('relay_port', 8444)} → Loom :{cfg['https_port']})")
     else:
         warn("relay not running — run `loom gateway up`")

@@ -166,7 +166,12 @@ loom gateway up
 ```
 
 This starts the native relay listening on `gateway.relay_port` (default **8444**)
-and forwarding to Loom's HTTPS port. Check it:
+and forwarding to Loom's HTTPS port. It is supervised **cross-platform** and
+survives restarts: a **launchd** agent on macOS, a **systemd `--user`** unit on
+Linux, or a plain background process if neither is available (no reboot
+persistence in that case — on Linux, `loginctl enable-linger $USER` makes the
+systemd unit persist). Force a backend with `gateway.relay_supervisor`
+(`launchd | systemd | process`). `socat` is required. Check it:
 
 ```bash
 loom gateway status

@@ -23,8 +23,11 @@ DEFAULT_CONFIG = {
     # The gateway exposes Loom beyond this machine (see gateway.py).
     "gateway": {
         # Native relay: a non-Docker listener the external edge proxies to
-        # (OrbStack won't forward Docker-published ports off-loopback).
+        # (some Docker setups won't forward published ports off-loopback).
         "relay_port": 8444,
+        # Relay supervisor: "" = auto (launchd on macOS, systemd --user on Linux,
+        # else a background process). Override: launchd | systemd | process.
+        "relay_supervisor": "",
         # `gated` tier (forwardAuth SSO). auth_upstream = the auth server
         # host:port reachable from THIS machine; a native relay bridges the
         # Traefik container to it. Empty disables the gated tier.
