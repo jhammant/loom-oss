@@ -4,10 +4,24 @@ version = "0.1.0"
 description = "Loom — an agent-native, additive app host. Deploy small apps; each is instantly routed, discoverable, agent-callable, and service-consuming."
 authors = [{ name = "Jon Hammant" }]
 license = { text = "BUSL-1.1" }
+readme = "README.md"
 requires-python = ">=3.9"
+keywords = ["deploy", "fleet", "agents", "mcp", "self-hosted", "docker", "traefik"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Internet :: WWW/HTTP :: Site Management",
+]
 dependencies = [
     "PyYAML>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/jhammant/loom-oss"
+Changelog = "https://github.com/jhammant/loom-oss/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
