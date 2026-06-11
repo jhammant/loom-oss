@@ -273,8 +273,3 @@ agree it is licensed under those terms. Good first areas:
 
 Please keep contributions focused, tested, and consistent with the patterns
 already in the repo.
-
----
-
-> **Note:** the `LICENSE` file should be reviewed by counsel before public
-> release.

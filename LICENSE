@@ -1,46 +1,111 @@
 Business Source License 1.1
 
-License text copyright (c) 2026 Jon Hammant. All Rights Reserved.
-"Business Source License" is a trademark of MariaDB Corporation Ab.
-
------------------------------------------------------------------------------
-
 Parameters
 
 Licensor:             Jon Hammant
 
 Licensed Work:        Loom — the version of the Loom software made available
-                      under this License.
+                      under this License. The Licensed Work is
+                      (c) 2026 Jon Hammant.
 
 Additional Use Grant: You may make production use of the Licensed Work,
                       provided you do not offer the Licensed Work to third
-                      parties as a hosted or managed service that competes with
-                      the Licensor's commercial Loom offering.
+                      parties as a hosted or managed service that competes
+                      with the Licensor's commercial Loom offering.
+
+                      For purposes of this grant: offering the Licensed Work
+                      to third parties as a hosted or managed service means
+                      providing the Licensed Work's functionality — hosting,
+                      deploying, and managing applications — as a service to
+                      users outside your organization. Self-hosting the
+                      Licensed Work for yourself, your team, or your
+                      organization (including its affiliates under common
+                      control), and hosting applications you or your
+                      organization own or operate, is expressly permitted.
 
 Change Date:          2030-06-10
 
 Change License:       Apache License, Version 2.0
 
+For information about alternative licensing arrangements for the Licensed
+Work, please contact the Licensor.
+
+Notice
+
+The Business Source License (this document, or the "License") is not an Open
+Source license. However, the Licensed Work will eventually be made available
+under an Open Source License, as stated in this License.
+
+License text copyright (c) 2017 MariaDB Corporation Ab, All Rights Reserved.
+"Business Source License" is a trademark of MariaDB Corporation Ab.
+
 -----------------------------------------------------------------------------
 
-Summary (non-binding, for convenience only)
+Business Source License 1.1
 
-You may copy, modify, create derivative works of, redistribute, and make
-non-production use of the Licensed Work. You may make production use of the
-Licensed Work subject to the Additional Use Grant above — in particular, you may
-NOT provide it to third parties as a hosted or managed service that competes
-with the Licensor's commercial Loom offering before the Change Date. On the
-Change Date, the Licensed Work becomes available under the Change License
-(Apache License, Version 2.0), and the restrictions of this License no longer
-apply.
+Terms
 
------------------------------------------------------------------------------
+The Licensor hereby grants you the right to copy, modify, create derivative
+works, redistribute, and make non-production use of the Licensed Work. The
+Licensor may make an Additional Use Grant, above, permitting limited
+production use.
 
-NOTICE — before public release:
+Effective on the Change Date, or the fourth anniversary of the first publicly
+available distribution of a specific version of the Licensed Work under this
+License, whichever comes first, the Licensor hereby grants you rights under
+the terms of the Change License, and the rights granted in the paragraph
+above terminate.
 
-  1. Append the full canonical text of the Business Source License 1.1 (the
-     "Terms" and "Covenants" sections) from https://mariadb.com/bsl11/ below
-     this notice. The Parameters block above is the operative configuration of
-     that license for this project.
-  2. Have the complete license reviewed by legal counsel. This file is a
-     release-prep template, not legal advice.
+If your use of the Licensed Work does not comply with the requirements
+currently in effect as described in this License, you must purchase a
+commercial license from the Licensor, its affiliated entities, or authorized
+resellers, or you must refrain from using the Licensed Work.
+
+All copies of the original and modified Licensed Work, and derivative works
+of the Licensed Work, are subject to this License. This License applies
+separately for each version of the Licensed Work and the Change Date may vary
+for each version of the Licensed Work released by Licensor.
+
+You must conspicuously display this License on each original or modified copy
+of the Licensed Work. If you receive the Licensed Work in original or
+modified form from a third party, the terms and conditions set forth in this
+License apply to your use of that work.
+
+Any use of the Licensed Work in violation of this License will automatically
+terminate your rights under this License for the current and all other
+versions of the Licensed Work.
+
+This License does not grant you any right in any trademark or logo of
+Licensor or its affiliates (provided that you may use a trademark or logo of
+Licensor as expressly required by this License).
+
+TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON
+AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS,
+EXPRESS OR IMPLIED, INCLUDING (WITHOUT LIMITATION) WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND
+TITLE.
+
+MariaDB hereby grants you permission to use this License's text to license
+your works, and to refer to it using the trademark "Business Source License",
+as long as you comply with the Covenants of Licensor below.
+
+Covenants of Licensor
+
+In consideration of the right to use this License's text and the "Business
+Source License" name and trademark, Licensor covenants to MariaDB, and to all
+other recipients of the licensed work to be provided by Licensor:
+
+1. To specify as the Change License the GPL Version 2.0 or any later version,
+   or a license that is compatible with GPL Version 2.0 or a later version,
+   where "compatible" means that software provided under the Change License can
+   be included in a program with software provided under GPL Version 2.0 or a
+   later version. Licensor may specify additional Change Licenses without
+   limitation.
+
+2. To either: (a) specify an additional grant of rights to use that does not
+   impose any additional restriction on the right granted in this License, as
+   the Additional Use Grant; or (b) insert the text "None".
+
+3. To specify a Change Date.
+
+4. Not to modify this License in any other way.
