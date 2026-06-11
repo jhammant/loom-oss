@@ -25,7 +25,8 @@ Most platforms are *substitutive*: adopting them means rebuilding your app to fi
 ### Install
 
 ```bash
-pipx install -e ./cli       # installs the `loom` command
+pipx install loomhost       # the `loom` command from PyPI
+# (or from a checkout: pipx install -e ./cli)
 mkcert -install             # one-time: trust mkcert's local CA
 loom proxy up               # start the shared reverse proxy (generates the local cert + network)
 ```

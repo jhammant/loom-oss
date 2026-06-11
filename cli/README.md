@@ -1,4 +1,4 @@
-# loom-cli
+# loomhost
 
 **Deploy a small app with one command — instantly routed at its own URL,
 health-checked, discoverable, agent-callable, and able to consume platform
@@ -20,7 +20,7 @@ access: public       # public | gated | private
 ```
 
 ```bash
-pipx install loom-cli
+pipx install loomhost
 loom proxy up
 loom deploy ./hello-web    # → https://hello-web.loom.localhost:8443
 loom admin                 # the fleet console
