@@ -1,0 +1,13 @@
+name: llm-consumer
+runtime: python
+port: 3000
+access: public
+
+manifest_version: 2
+metadata:
+  description: Demo app that calls an LLM with no API key via the Loom SDK.
+  tags: [demo, llm, sdk]
+health:
+  path: /health
+consumes:
+  - service: llm

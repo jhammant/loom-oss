@@ -139,7 +139,7 @@ It exposes:
 
 ## Shared services & data federation
 
-**Shared services** — an app declares a service it needs with `consumes:`; Loom resolves it against a deployed `provides_service:` app and injects `LOOM_<SVC>_URL` plus an HMAC `LOOM_<SVC>_TOKEN`, which the provider verifies (app-to-app identity). See `sdk/python/loom_sdk.py`; the dogfooded backend is `examples/loom-wallet` (a credit ledger with 401/402/idempotency), and `examples/wallet-consumer` proves the chain.
+**Shared services** — an app declares a service it needs with `consumes:`; Loom resolves it against a deployed `provides_service:` app and injects `LOOM_<SVC>_URL` plus an HMAC `LOOM_<SVC>_TOKEN`, which the provider verifies (app-to-app identity). See `sdk/python/loom_sdk.py`; the dogfooded backends are `examples/loom-wallet` (a credit ledger with 401/402/idempotency) and `examples/loom-llm` (a **no-key LLM gateway** — declare `consumes: [llm]` and call `loom_sdk.llm().chat(...)` with no provider key in your app; per-app token cap, bring-your-own `ANTHROPIC_API_KEY` via the gitignored `fleet/secrets.json`, stub mode until then). `examples/wallet-consumer` and `examples/llm-consumer` prove the chains.
 
 **Data federation** — `data.provides` / `data.consumes` wire consumers to a grant-checked **federation gateway** (`examples/loom-fed`, deny-by-default with a live-grant check); inspect the fabric with `loom data ls` and `loom data grants`. See `examples/data-provider` and `examples/data-consumer`.
 
@@ -161,11 +161,12 @@ Deploy `proxy/gateway/edge-loom.yml` to your reverse proxy. (`loom gateway sync`
 cli/                    The `loom` CLI (Python)
   loom/                 deploy/list/logs/proxy/gateway/find/describe/mcp/data + the contract, harvester, Library
   loom/targets/         target-adapter seam (base.py); only `local` (Docker) is implemented today
-  tests/                26 tests (manifest/contract, Library, MCP, services, federation)
+  tests/                38 tests (manifest/contract, Library, MCP, services, federation, SDK)
 proxy/                  Shared Traefik reverse proxy (docker-compose.yml), per-app route files, local certs
 sdk/python/             loom_sdk.py — call shared services from an app
 examples/               hello-web, hello-static, hello-clock, hello-gated, capability-demo,
-                        loom-wallet + wallet-consumer, loom-fed + data-provider/data-consumer
+                        loom-wallet + wallet-consumer, loom-llm + llm-consumer,
+                        loom-fed + data-provider/data-consumer
 docs/                   app-contract.md (the manifest reference)
 ```
 

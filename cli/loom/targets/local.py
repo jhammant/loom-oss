@@ -76,6 +76,7 @@ class LocalDockerTarget(Target):
         # Shared-services wiring: this app may PROVIDE a service and/or CONSUME
         # others. Provider gets the verify secret; consumer gets scoped URLs+tokens.
         env.update(services.provider_env(cfg, manifest))
+        env.update(services.secret_env(manifest))
         provisioned_env, grants = services.provision_env(cfg, manifest)
         env.update(provisioned_env)
         data_env, data_grants = services.provision_data_env(cfg, manifest)

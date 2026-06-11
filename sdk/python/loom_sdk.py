@@ -72,3 +72,64 @@ class Wallet(_Client):
 
 def wallet() -> Wallet:
     return Wallet()
+
+
+class LLM(_Client):
+    """No-key LLM access via the platform gateway. Declare `consumes: [llm]` and
+    Loom injects the endpoint + token — the app never holds a provider key.
+
+        from loom_sdk import llm
+        reply = llm().chat("Summarise this in one line: ...", model="fast")
+        print(reply["text"])
+    """
+    def __init__(self):
+        super().__init__("llm")
+
+    def chat(self, messages, model="fast", max_tokens=1024):
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+        return self._request("POST", "/v1/chat",
+                             {"model": model, "messages": messages, "max_tokens": max_tokens})
+
+
+def llm() -> LLM:
+    return LLM()
+
+
+# --- identity (zero-config; available to GATED apps via request headers) --------
+
+class Identity:
+    def __init__(self, user="", email="", name="", groups=()):
+        self.user, self.email, self.name = user, email, name
+        self.groups = list(groups)
+
+    @property
+    def is_authenticated(self) -> bool:
+        return bool(self.user)
+
+    def __repr__(self):
+        return f"Identity(user={self.user!r}, email={self.email!r}, groups={self.groups})"
+
+
+def identity(headers) -> Identity:
+    """The authenticated user for a GATED request, from the headers the platform's
+    forward-auth injects (Remote-User / Remote-Email / Remote-Name / Remote-Groups).
+    Returns an empty Identity for unauthenticated (public) requests. `headers` is
+    any case-insensitive mapping — e.g. a stdlib http.server `self.headers`, a
+    WSGI/ASGI headers object, or a dict."""
+    def h(*names):
+        for n in names:
+            try:
+                v = headers.get(n)
+            except Exception:
+                v = None
+            if v:
+                return v
+        return ""
+    groups = h("Remote-Groups", "X-Forwarded-Groups")
+    return Identity(
+        user=h("Remote-User", "X-Forwarded-User", "X-Auth-Request-User"),
+        email=h("Remote-Email", "X-Forwarded-Email", "X-Auth-Request-Email"),
+        name=h("Remote-Name"),
+        groups=[g.strip() for g in groups.split(",") if g.strip()],
+    )

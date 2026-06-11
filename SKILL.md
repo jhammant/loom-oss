@@ -238,10 +238,25 @@ the file into the app:
 ```python
 import loom_sdk
 loom_sdk.wallet().charge("alice", 100, idempotency_key="order-42")  # 401→Unauthorized, 402→InsufficientCredits
+reply = loom_sdk.llm().chat("Summarise this in one line: ...", model="fast")  # no API key in your app
 ```
-Known services: `auth | email | billing | wallet`. Others are allowed but warn (and stay
-unresolved). The reference backend is `examples/loom-wallet` (a credit ledger doing 401/402/
-idempotency); `examples/wallet-consumer` proves the chain end to end.
+Known services: `auth | email | billing | wallet | llm`. Others are allowed but warn (and stay
+unresolved). Reference backends: `examples/loom-wallet` (a credit ledger doing 401/402/idempotency)
+and `examples/loom-llm` (the LLM gateway below); `examples/wallet-consumer` and
+`examples/llm-consumer` prove the chains end to end.
+
+### No-key LLM (`consumes: [llm]`)
+Declare `consumes: [llm]` and call `loom_sdk.llm().chat(prompt, model="fast"|"smart"|"frontier")` —
+**your app never holds a provider key**. The gateway (`examples/loom-llm`) HMAC-verifies the caller,
+maps the model alias, meters tokens against a **per-app cap**, and proxies to Anthropic. It runs in
+**stub mode** until a key is present, so the wiring works before you add one. To go live, the
+*operator* drops the key in `fleet/secrets.json` (gitignored) — the gateway declares
+`secrets: [ANTHROPIC_API_KEY]` and Loom injects it host-side. Apps stay key-free.
+
+### Caller identity (`identity()`)
+For **gated** apps, `loom_sdk.identity(headers)` returns the SSO-authenticated caller
+(`who.user`, `who.email`, `who.groups`, `who.is_authenticated`) from the edge's forward-auth headers —
+zero config. Public requests resolve to an empty, unauthenticated identity.
 
 **Resolution is best-effort and order-independent**: if you deploy a consumer before its provider,
 Loom warns (`consumes 'wallet' … no provider … redeploy after deploying the provider`) and injects

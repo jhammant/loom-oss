@@ -17,7 +17,7 @@ from .util import LoomError, warn
 
 MANIFEST_VERSION = 2
 CAPABILITY_KINDS = {"http", "openapi", "mcp"}
-KNOWN_SERVICES = {"auth", "email", "billing", "wallet"}
+KNOWN_SERVICES = {"auth", "email", "billing", "wallet", "llm"}
 DATA_APIS = {"rest", "graphql", "event"}
 DEFAULT_HEALTH_PATH = "/health"
 _ID_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -144,6 +144,9 @@ def normalize(raw: dict) -> dict:
     provides = raw.get("provides_service") or ""
     if provides and not isinstance(provides, str):
         _err("provides_service must be a string (the service name this app backs)")
+    secrets = raw.get("secrets") or []
+    if not isinstance(secrets, list) or not all(isinstance(s, str) for s in secrets):
+        _err("secrets must be a list of environment-variable names")
     return {
         "manifest_version": mv,
         "metadata": parse_metadata(raw),
@@ -152,6 +155,7 @@ def normalize(raw: dict) -> dict:
         "consumes": parse_consumes(raw),
         "data": parse_data(raw),
         "provides_service": provides,
+        "secrets": secrets,
     }
 
 
@@ -167,6 +171,7 @@ def snapshot(manifest: dict) -> dict:
         "consumes": manifest.get("consumes", []),
         "data": manifest.get("data", {"provides": [], "consumes": []}),
         "provides_service": manifest.get("provides_service", ""),
+        "secrets": manifest.get("secrets", []),
         "harvested_at": None,
         "health_status": "unknown",
         "capability_index": [],

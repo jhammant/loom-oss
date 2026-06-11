@@ -2,6 +2,7 @@
 fleet/registry.json
 fleet/config.json
 fleet/library.json
+fleet/secrets.json       # provider API keys (e.g. ANTHROPIC_API_KEY) — NEVER commit
 
 # Generated Traefik route files + TLS material
 proxy/dynamic/app-*.yml

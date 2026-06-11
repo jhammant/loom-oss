@@ -60,6 +60,24 @@ def _internal_url(entry: dict) -> str:
     return f"http://loom-{entry['name']}:{port}"  # reachable over the loom network
 
 
+def secret_env(manifest: dict) -> dict:
+    """Inject the platform secrets an app declares (`secrets:` in the manifest)
+    from fleet/secrets.json (gitignored) — server-side key storage, so apps never
+    embed provider keys. A declared-but-missing secret warns and is skipped."""
+    names = manifest.get("secrets") or []
+    if not names:
+        return {}
+    f = paths().fleet / "secrets.json"
+    store = json.loads(f.read_text()) if f.exists() else {}
+    out = {}
+    for n in names:
+        if n in store:
+            out[n] = store[n]
+        else:
+            warn(f"app '{manifest['name']}' wants secret '{n}' but it is not in fleet/secrets.json")
+    return out
+
+
 def provider_env(cfg: dict, manifest: dict) -> dict:
     """Provider side: secret + service name so the backend can verify callers."""
     svc = manifest.get("provides_service") or ""

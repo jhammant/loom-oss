@@ -38,7 +38,7 @@ reserved for the commercial product, and why the line is drawn where it is.
 
 ## What the open core includes
 
-Everything below is built, tested, and shipping in this repo (26 tests pass).
+Everything below is built, tested, and shipping in this repo (38 tests pass).
 
 ### The `loom` CLI
 
@@ -110,15 +110,43 @@ deployed provider (`provides_service:`) and injects `LOOM_<SVC>_URL` plus an
 HMAC `LOOM_<SVC>_TOKEN`; the provider verifies the caller (app-to-app identity).
 Resolution is best-effort — an unresolved consume warns and blocks nothing.
 
-- SDK: [`sdk/python/loom_sdk.py`](sdk/python/loom_sdk.py).
-- Dogfooded backend: [`examples/loom-wallet`](examples/loom-wallet) — a credit
-  ledger with `401` / `402` / idempotency semantics.
-- [`examples/wallet-consumer`](examples/wallet-consumer) proves the full chain
-  end to end.
+- SDK: [`sdk/python/loom_sdk.py`](sdk/python/loom_sdk.py) — `wallet()`, `llm()`,
+  and `identity()`.
+- Dogfooded backends:
+  - [`examples/loom-wallet`](examples/loom-wallet) — a credit ledger with `401` /
+    `402` / idempotency semantics.
+  - [`examples/loom-llm`](examples/loom-llm) — a **bring-your-own-key LLM
+    gateway**: an app `consumes: [llm]` and calls it with **no provider key of
+    its own**; the gateway HMAC-verifies the caller, maps a small set of model
+    aliases, **meters tokens against a per-app cap**, and proxies to Anthropic
+    (or stubs cleanly until you add a key). It declares
+    `secrets: [ANTHROPIC_API_KEY]` — see *server-side secrets* below.
+- [`examples/wallet-consumer`](examples/wallet-consumer) and
+  [`examples/llm-consumer`](examples/llm-consumer) prove the full chains end to
+  end.
 
-> The open core ships the **mechanism** and self-host **examples**. The
-> *managed* backends those examples stand in for (a hosted LLM gateway, managed
-> billing) are the commercial product — see the boundary below.
+#### Server-side secrets (`secrets:`)
+
+A backend app declares the env-var secrets it needs (`secrets:` in
+`fleet.app.yaml`); Loom injects them at deploy time from
+`fleet/secrets.json` (**gitignored** — never committed), so **provider keys live
+on the host, not in the app image or repo**. A declared-but-missing secret warns
+and is skipped (never blocks a deploy), which is exactly what lets `loom-llm` run
+in stub mode until you drop in a key.
+
+#### Caller identity (`identity()`)
+
+For `gated` apps, `loom_sdk.identity(headers)` reads the forward-auth headers the
+edge injects (`Remote-User` / `Remote-Email` / `Remote-Name` / `Remote-Groups`,
+with `X-Forwarded-*` fallbacks) into a small `Identity` object — zero-config
+"who is calling me" for any app behind SSO. Public requests resolve to an empty,
+unauthenticated identity.
+
+> The open core ships the **mechanism** and self-host **examples** — including a
+> single-tenant, bring-your-own-key LLM gateway. The *managed, multi-tenant*
+> backends those examples stand in for (a **hosted** LLM/image gateway that holds
+> provider keys for tenants and bills usage, managed billing) are the commercial
+> product — see the boundary below.
 
 ### Data federation
 
@@ -163,6 +191,8 @@ not here.
 | Library + `loom find` / `describe` | ✅ | ✅ |
 | `loom mcp` (MCP + OpenAPI + REST) | ✅ | ✅ |
 | Shared-services **mechanism** (`consumes:` / `provides_service:`) | ✅ | ✅ |
+| Server-side secrets (`secrets:`) + caller `identity()` | ✅ | ✅ |
+| Self-host LLM gateway example (**bring-your-own-key**, per-app cap) | ✅ | ✅ |
 | Data federation (grant-checked gateway) | ✅ | ✅ |
 | Native relay + edge-config for self-hosted exposure | ✅ | ✅ |
 | Target-adapter seam (`local` implemented) | ✅ | ✅ |
@@ -170,7 +200,7 @@ not here.
 | **Accounts / teams / SSO / RBAC** | ❌ | ✅ |
 | **Web dashboard** | ❌ | ✅ |
 | **Billing, usage metering, quotas, abuse/spend caps** | ❌ | ✅ |
-| **Managed LLM / image gateway** (hosted, holds provider keys) | ❌ | ✅ |
+| **Managed LLM / image gateway** (hosted, multi-tenant, holds tenants' keys + meters/bills) | ❌ | ✅ |
 | **Managed Postgres / storage / domain provisioning** | ❌ | ✅ |
 | **Managed cloud deploy target + hosted control plane** | ❌ | ✅ |
 
@@ -184,9 +214,10 @@ In short, the commercial product adds the things that only make sense as a
 - **Commercial controls** — billing, usage metering, quotas, and abuse/spend
   caps.
 - **Managed consumables** — the open core ships the `consumes:` *mechanism* plus
-  self-host examples; the hosted product provides the **managed backends**: an
-  LLM/image gateway that holds the provider keys, and managed
-  Postgres/storage/domain provisioning.
+  self-host examples (including a **bring-your-own-key** LLM gateway,
+  `examples/loom-llm`); the hosted product provides the **managed, multi-tenant
+  backends**: an LLM/image gateway that holds *tenants'* provider keys and meters
+  and bills usage, plus managed Postgres/storage/domain provisioning.
 - **Managed cloud deploy** — a hosted deploy target (slotting into the same
   target-adapter seam) and the control plane behind it.
 

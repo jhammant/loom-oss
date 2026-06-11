@@ -110,3 +110,40 @@ def test_unknown_consumes_service_warns_not_raises():
 def test_newer_manifest_version_is_accepted():
     out = contract.normalize({"manifest_version": 99})  # warns, does not raise
     assert out["manifest_version"] == 99
+
+
+# --- secrets + llm service -----------------------------------------------------
+
+def test_secrets_parse_and_snapshot(tmp_path):
+    d = write(tmp_path, """
+name: loom-llm
+runtime: python
+port: 8095
+access: private
+manifest_version: 2
+provides_service: llm
+secrets:
+  - ANTHROPIC_API_KEY
+""")
+    m = manifest.load_manifest(d)
+    assert m["provides_service"] == "llm"
+    assert m["secrets"] == ["ANTHROPIC_API_KEY"]
+    assert contract.snapshot(m)["secrets"] == ["ANTHROPIC_API_KEY"]
+
+
+def test_secrets_must_be_list_of_strings():
+    with pytest.raises(LoomError, match="secrets must be a list"):
+        contract.normalize({"secrets": "ANTHROPIC_API_KEY"})  # str, not a list
+    with pytest.raises(LoomError, match="secrets must be a list"):
+        contract.normalize({"secrets": [123]})  # non-string entry
+
+
+def test_secrets_default_empty():
+    assert contract.normalize({})["secrets"] == []
+
+
+def test_llm_is_a_known_service():
+    # consumes: [llm] must NOT warn (it's a first-class service now)
+    out = contract.parse_consumes({"consumes": [{"service": "llm"}]})
+    assert out[0]["service"] == "llm"
+    assert "llm" in contract.KNOWN_SERVICES

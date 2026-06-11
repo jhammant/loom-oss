@@ -1,0 +1,14 @@
+name: loom-llm
+runtime: python
+port: 8095
+access: private          # a backend service — not publicly routed
+
+manifest_version: 2
+provides_service: llm     # apps that `consumes: [llm]` get a no-key endpoint + token
+secrets:
+  - ANTHROPIC_API_KEY     # injected from fleet/secrets.json (gitignored); stub mode without it
+metadata:
+  description: No-key LLM gateway — proxies Anthropic with per-app token metering.
+  tags: [service, llm, ai]
+health:
+  path: /health

@@ -42,8 +42,13 @@ capabilities:          # default []
     # semantics: <reserved for taxilang/Orbital semantic types — accepted, not yet used>
 
 consumes:              # default []  (shared services the app wants)
-  - service: wallet            # auth | email | billing | wallet (others warn, still allowed)
+  - service: wallet            # auth | email | billing | wallet | llm (others warn, still allowed)
     scope: charge
+
+provides_service: ""   # default ""; the service name this app BACKS (e.g. wallet, llm)
+
+secrets: []            # default []; env-var names injected from fleet/secrets.json
+  # - ANTHROPIC_API_KEY        #   (gitignored host-side key store; missing ones warn + skip)
 
 data:                  # default {provides: [], consumes: []}
   provides:
@@ -61,6 +66,17 @@ The `kind` tells the harvester how the capability is reached: `http` (a plain
 endpoint), `openapi` (an OpenAPI 3.x spec the harvester can expand into
 operations), or `mcp` (an MCP endpoint). Every kind needs a `path`. `input_schema`
 /`output_schema` are JSON Schema and feed the future MCP/OpenAPI tool surface.
+
+### Shared services: `provides_service` and `secrets`
+`provides_service` marks an app as a **backend** for a named service; apps that
+`consumes:` that service are wired to it automatically (Loom injects
+`LOOM_<SVC>_URL` + an HMAC `LOOM_<SVC>_TOKEN`, and the provider gets
+`LOOM_SERVICE` + `LOOM_SERVICE_SECRET` to verify callers). `secrets` lists
+env-var names to inject at deploy from **`fleet/secrets.json`** (gitignored, so
+keys live on the host — never in the image or repo); a declared-but-missing
+secret warns and is skipped rather than blocking the deploy. See
+[`examples/loom-llm`](../examples/loom-llm) — a bring-your-own-key LLM backend
+that declares `provides_service: llm` and `secrets: [ANTHROPIC_API_KEY]`.
 
 ### Reserved: `semantics`
 `semantics` on a capability or dataset is **accepted and stored but not yet acted
