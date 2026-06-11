@@ -55,7 +55,18 @@ loom stop hello-web         # stop / start without removing
 loom start hello-web
 loom remove hello-web       # tear down and de-index
 loom proxy status           # proxy state + dashboard URL
+loom admin                  # open the local fleet console (web UI)
 ```
+
+### The fleet console — `loom admin`
+
+A localhost-only web UI over your fleet: every app with live status, health,
+and URLs; one-click stop/start/remove and a logs drawer; and a **scanner**
+(default `~/dev`) that finds deployable candidates — directories that already
+carry a `fleet.app.yaml`, or whose runtime Loom can infer (Dockerfile /
+package.json / index.html / pyproject). Deploying a candidate with no manifest
+writes a minimal `fleet.app.yaml` next to the app first, then deploys it. It
+binds `127.0.0.1` and refuses non-loopback callers.
 
 ## The manifest
 

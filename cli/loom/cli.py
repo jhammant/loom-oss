@@ -288,6 +288,15 @@ def cmd_gateway(args) -> int:
     return 0
 
 
+def cmd_admin(args) -> int:
+    from . import admin
+    cfg = load_config()
+    admin.serve(cfg, port=args.port,
+                root=Path(args.root).expanduser() if args.root else None,
+                open_browser=not args.no_open)
+    return 0
+
+
 # --- argument parser -----------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
@@ -326,6 +335,12 @@ def build_parser() -> argparse.ArgumentParser:
     mc.add_argument("--host", default="127.0.0.1")
     mc.add_argument("--port", type=int, default=7878)
     mc.set_defaults(func=cmd_mcp)
+
+    ad = sub.add_parser("admin", help="open the local fleet console (web UI)")
+    ad.add_argument("--port", type=int, default=7879)
+    ad.add_argument("--root", help="directory to scan for deployable apps (default ~/dev)")
+    ad.add_argument("--no-open", action="store_true", help="don't open the browser")
+    ad.set_defaults(func=cmd_admin)
 
     dt = sub.add_parser("data", help="inspect the data-federation fabric")
     dt.add_argument("what", choices=["ls", "grants"], nargs="?", default="ls")

@@ -47,5 +47,9 @@ First public release of the Loom open core.
   `edge-config` for fronting the fleet with your own edge proxy.
 - **Target-adapter seam** — `cli/loom/targets/base.py`; `local` (Docker)
   implemented.
-- Test suite: 38 tests across contract, Library, MCP, services, federation,
-  and SDK.
+- **`loom admin`** — localhost-only fleet console: live fleet table with
+  one-click stop/start/remove and logs, plus a directory scanner (default
+  `~/dev`) that infers runtimes and deploys candidates, writing a minimal
+  `fleet.app.yaml` next to apps that lack one.
+- Test suite: 46 tests across contract, Library, MCP, services, federation,
+  SDK, and the admin console.

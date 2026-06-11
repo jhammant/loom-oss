@@ -52,6 +52,7 @@ A single Python CLI (`pipx install -e ./cli`), target-agnostic by design:
 | Health | `health` |
 | Library (discovery) | `find`, `describe` (both with `--json` for agents), `reindex` |
 | Agent surface | `mcp` |
+| Admin console | `admin` (localhost web UI: fleet view, directory scanner, one-click deploy) |
 | Data federation | `data ls` \| `data grants` |
 
 ### Local substrate
@@ -196,9 +197,10 @@ not here.
 | Data federation (grant-checked gateway) | ✅ | ✅ |
 | Native relay + edge-config for self-hosted exposure | ✅ | ✅ |
 | Target-adapter seam (`local` implemented) | ✅ | ✅ |
+| Local admin console (`loom admin`: single fleet, localhost-only) | ✅ | ✅ |
 | **Multi-tenancy + per-tenant isolation** | ❌ | ✅ |
 | **Accounts / teams / SSO / RBAC** | ❌ | ✅ |
-| **Web dashboard** | ❌ | ✅ |
+| **Hosted multi-tenant web dashboard** | ❌ | ✅ |
 | **Billing, usage metering, quotas, abuse/spend caps** | ❌ | ✅ |
 | **Managed LLM / image gateway** (hosted, multi-tenant, holds tenants' keys + meters/bills) | ❌ | ✅ |
 | **Managed Postgres / storage / domain provisioning** | ❌ | ✅ |
