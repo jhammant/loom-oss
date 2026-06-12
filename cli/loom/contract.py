@@ -17,7 +17,7 @@ from .util import LoomError, warn
 
 MANIFEST_VERSION = 2
 CAPABILITY_KINDS = {"http", "openapi", "mcp"}
-KNOWN_SERVICES = {"auth", "email", "billing", "wallet", "llm"}
+KNOWN_SERVICES = {"auth", "email", "billing", "wallet", "llm", "analytics"}
 DATA_APIS = {"rest", "graphql", "event"}
 DEFAULT_HEALTH_PATH = "/health"
 _ID_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -133,6 +133,24 @@ def parse_data(raw: dict) -> dict:
     return {"provides": datasets("provides"), "consumes": datasets("consumes")}
 
 
+def parse_allow(raw: dict) -> dict:
+    """Per-app authorization for the `gated` tier: which SSO users/groups may
+    reach the app. Empty (the default) = any authenticated user, exactly the
+    pre-allow behaviour. Enforced by header-matcher routers on the shared
+    proxy against the Remote-User / Remote-Groups headers the edge SSO
+    injects (see proxy.write_route)."""
+    a = _as_dict(raw.get("allow"), "allow")
+    users = [str(u) for u in _as_list(a.get("users"), "allow.users")]
+    groups = [str(g) for g in _as_list(a.get("groups"), "allow.groups")]
+    for v in users + groups:
+        if any(ch in v for ch in "`\"\\\n"):
+            _err(f"allow entries must not contain quotes/backticks (got {v!r})")
+    if (users or groups) and raw.get("access") != "gated":
+        warn("fleet.app.yaml: allow.users/groups only applies to access: gated "
+             "(public ignores it; private is never routed)")
+    return {"users": users, "groups": groups}
+
+
 def normalize(raw: dict) -> dict:
     """The v2 fields, normalized and defaulted, to merge onto the v1 manifest."""
     mv = raw.get("manifest_version", 1)
@@ -156,6 +174,7 @@ def normalize(raw: dict) -> dict:
         "data": parse_data(raw),
         "provides_service": provides,
         "secrets": secrets,
+        "allow": parse_allow(raw),
     }
 
 
@@ -172,6 +191,7 @@ def snapshot(manifest: dict) -> dict:
         "data": manifest.get("data", {"provides": [], "consumes": []}),
         "provides_service": manifest.get("provides_service", ""),
         "secrets": manifest.get("secrets", []),
+        "allow": manifest.get("allow", {"users": [], "groups": []}),
         "harvested_at": None,
         "health_status": "unknown",
         "capability_index": [],

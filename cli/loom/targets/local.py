@@ -104,8 +104,13 @@ class LocalDockerTarget(Target):
                 )
             # The Loom-side route is identical to a public app; SSO gating is
             # applied at the EDGE via gateway.write_edge_gated (the Loom
-            # container can't reach the SSO server's LAN IP).
-            proxy.write_route(cfg, name, container, service_port)
+            # container can't reach the SSO server's LAN IP). Per-app
+            # allow.users/groups is enforced HERE against the Remote-* headers
+            # the edge injects.
+            allow = manifest.get("allow") if access == "gated" else None
+            if allow and not (allow.get("users") or allow.get("groups")):
+                allow = None
+            proxy.write_route(cfg, name, container, service_port, allow=allow)
             url = app_url(cfg, name, "public")
             public_url = public_app_url(cfg, name)
         else:  # private

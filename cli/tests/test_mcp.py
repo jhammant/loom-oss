@@ -34,3 +34,45 @@ def test_invoke_unknown_app_raises(monkeypatch):
     monkeypatch.setattr(registry, "get", lambda n: None)
     with pytest.raises(LoomError, match="unknown app"):
         mcp_server._invoke("nope", "/")
+
+
+# --- admin tools (loom mcp --admin) ----------------------------------------------
+
+def test_admin_tools_hidden_without_flag():
+    from loom import mcp_server
+    resp = mcp_server._rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert "loom_deploy" not in names
+    resp = mcp_server._rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                           cfg={}, admin=True)
+    names = {t["name"] for t in resp["result"]["tools"]}
+    assert {"loom_fleet", "loom_deploy", "loom_stop", "loom_start",
+            "loom_remove", "loom_services", "loom_traffic"} <= names
+
+
+def test_admin_call_refused_without_flag():
+    from loom import mcp_server
+    resp = mcp_server._rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                            "params": {"name": "loom_remove",
+                                       "arguments": {"name": "x"}}})
+    assert resp["result"]["isError"] is True
+    assert "--admin" in resp["result"]["content"][0]["text"]
+
+
+def test_admin_call_dispatches(monkeypatch):
+    from loom import admin, mcp_server
+    monkeypatch.setattr(admin, "stop_app", lambda cfg, n: None)
+    resp = mcp_server._rpc({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                            "params": {"name": "loom_stop",
+                                       "arguments": {"name": "shop"}}},
+                           cfg={}, admin=True)
+    import json as j
+    assert j.loads(resp["result"]["content"][0]["text"]) == {"ok": True}
+
+
+def test_admin_serve_refuses_remote_host():
+    import pytest
+    from loom import mcp_server
+    from loom.util import LoomError
+    with pytest.raises(LoomError, match="loopback-only"):
+        mcp_server.serve({}, host="0.0.0.0", admin=True)

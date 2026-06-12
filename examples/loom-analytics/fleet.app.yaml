@@ -1,0 +1,12 @@
+name: loom-analytics
+runtime: python
+port: 8090
+access: private             # a backend service — not publicly routed
+
+manifest_version: 2
+provides_service: analytics  # apps that `consumes: [analytics]` get wired to this
+metadata:
+  description: Event-tracking shared service (app-to-app authed).
+  tags: [service, analytics, events]
+health:
+  path: /health

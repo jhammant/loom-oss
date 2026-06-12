@@ -287,3 +287,29 @@ def test_fleet_stats_parses_docker_lines(monkeypatch):
     s = admin.fleet_stats({})
     assert s == {"shop": {"cpu": "1.2%", "mem": "30MiB / 8GiB",
                           "mem_pct": "0.4%", "net": "1kB / 2kB"}}
+
+
+def test_fleet_traffic_aggregates_access_log(tmp_path, monkeypatch):
+    import time as _t
+    from datetime import datetime, timezone
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    logdir = tmp_path / "proxy" / "logs"; logdir.mkdir(parents=True)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    lines = [
+        {"RouterName": "shop@file", "StartUTC": now, "DownstreamStatus": 200,
+         "Duration": 5_000_000},
+        {"RouterName": "shop-allowed@file", "StartUTC": now,
+         "DownstreamStatus": 200, "Duration": 15_000_000},
+        {"RouterName": "shop-deny@file", "StartUTC": now,
+         "DownstreamStatus": 403, "Duration": 1_000_000},
+        {"RouterName": "shop@file", "StartUTC": "2001-01-01T00:00:00Z",
+         "DownstreamStatus": 200, "Duration": 1},          # outside window
+        {"RouterName": "api@internal", "StartUTC": now,
+         "DownstreamStatus": 200, "Duration": 1},          # not an app
+    ]
+    (logdir / "access.log").write_text("\n".join(json.dumps(l) for l in lines) + "\n")
+    t = admin.fleet_traffic({}, window_s=3600)
+    assert t["shop"]["requests"] == 3
+    assert t["shop"]["denied"] == 1
+    assert t["shop"]["avg_ms"] == 7.0
+    assert "api" not in t

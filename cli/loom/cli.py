@@ -192,7 +192,7 @@ def cmd_reindex(args) -> int:
 
 def cmd_mcp(args) -> int:
     from . import mcp_server
-    mcp_server.serve(load_config(), host=args.host, port=args.port)
+    mcp_server.serve(load_config(), host=args.host, port=args.port, admin=args.admin)
     return 0
 
 
@@ -343,6 +343,8 @@ def build_parser() -> argparse.ArgumentParser:
     mc = sub.add_parser("mcp", help="serve the Library as an MCP + OpenAPI endpoint")
     mc.add_argument("--host", default="127.0.0.1")
     mc.add_argument("--port", type=int, default=7878)
+    mc.add_argument("--admin", action="store_true",
+                    help="also expose platform tools (deploy/stop/start/remove); loopback-only")
     mc.set_defaults(func=cmd_mcp)
 
     ad = sub.add_parser("admin", help="open the local fleet console (web UI)")

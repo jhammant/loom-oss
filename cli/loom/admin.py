@@ -261,6 +261,7 @@ def app_detail(cfg: dict, name: str) -> dict:
         "data": contract.get("data") or {"provides": [], "consumes": []},
         "data_grants": entry.get("data_grants") or [],
         "secrets": contract.get("secrets") or [],  # names only, by design
+        "allow": contract.get("allow") or {"users": [], "groups": []},
     }
 
 
@@ -282,6 +283,58 @@ def fleet_stats(cfg: dict) -> dict:
                              "mem": d.get("MemUsage", ""),
                              "mem_pct": d.get("MemPerc", ""),
                              "net": d.get("NetIO", "")}
+    return out
+
+
+def fleet_traffic(cfg: dict, window_s: int = 3600, max_bytes: int = 8_000_000) -> dict:
+    """Per-app traffic from Traefik's JSON access log (proxy/logs/access.log):
+    request count, average duration, error counts within the window. Zero app
+    instrumentation — every routed request is already in the log. Router
+    names map back to apps ('shop', 'shop-allowed', 'shop-deny' → 'shop')."""
+    from .config import paths
+    f = paths().proxy / "logs" / "access.log"
+    if not f.exists():
+        return {}
+    cutoff = time.time() - window_s
+    out: dict[str, dict] = {}
+    with f.open("rb") as fh:
+        size = f.stat().st_size
+        if size > max_bytes:
+            fh.seek(size - max_bytes)
+            fh.readline()  # drop the partial line
+        for raw in fh:
+            try:
+                d = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            router = d.get("RouterName", "")
+            if "@file" not in router:
+                continue
+            app = router.split("@", 1)[0]
+            for suffix in ("-allowed", "-deny"):
+                if app.endswith(suffix):
+                    app = app[: -len(suffix)]
+            ts = d.get("StartUTC", "")
+            try:
+                from datetime import datetime, timezone
+                t = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+            if t < cutoff:
+                continue
+            s = out.setdefault(app, {"requests": 0, "errors_4xx": 0,
+                                     "errors_5xx": 0, "denied": 0, "_dur": 0})
+            s["requests"] += 1
+            code = int(d.get("DownstreamStatus", 0))
+            if code == 403 and d.get("RouterName", "").startswith(f"{app}-deny"):
+                s["denied"] += 1
+            elif 400 <= code < 500:
+                s["errors_4xx"] += 1
+            elif code >= 500:
+                s["errors_5xx"] += 1
+            s["_dur"] += int(d.get("Duration", 0))
+    for s in out.values():
+        s["avg_ms"] = round(s.pop("_dur") / s["requests"] / 1e6, 1) if s["requests"] else 0
     return out
 
 
@@ -434,6 +487,9 @@ def make_handler(cfg: dict, default_root: Path, creds: dict | None = None,
                 return self._send(200, services_snapshot(cfg))
             if u.path == "/api/stats":
                 return self._send(200, fleet_stats(cfg))
+            if u.path == "/api/traffic":
+                return self._send(200, fleet_traffic(
+                    cfg, window_s=int(q.get("window", ["3600"])[0])))
             if u.path == "/api/logs":
                 try:
                     text = app_logs(cfg, q.get("app", [""])[0],

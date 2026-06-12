@@ -26,7 +26,12 @@ services:
       - "--api.dashboard=true"
       - "--api.insecure=true" # dashboard on :8080, localhost-only mapping below
       - "--log.level=INFO"
+      # JSON access log on a mounted file: the admin console reads it for
+      # per-app traffic (requests, latency, errors). Rotated by truncation
+      # from the console when it grows past ~50MB.
       - "--accesslog=true"
+      - "--accesslog.format=json"
+      - "--accesslog.filepath=/logs/access.log"
     ports:
       # Bound to loopback: a local fleet host, not exposed to the LAN.
       - "127.0.0.1:${LOOM_HTTP_PORT:-80}:80"
@@ -35,6 +40,7 @@ services:
     volumes:
       - ./dynamic:/dynamic:ro
       - ./certs:/certs:ro
+      - ./logs:/logs
     networks:
       - loom
 

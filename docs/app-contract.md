@@ -42,8 +42,12 @@ capabilities:          # default []
     # semantics: <reserved for taxilang/Orbital semantic types — accepted, not yet used>
 
 consumes:              # default []  (shared services the app wants)
-  - service: wallet            # auth | email | billing | wallet | llm (others warn, still allowed)
+  - service: wallet            # auth | email | billing | wallet | llm | analytics (others warn, still allowed)
     scope: charge
+
+allow:                 # default {users: [], groups: []}; gated tier only
+  users: [jon]                 # SSO usernames allowed through
+  groups: [family]             # SSO groups allowed through (either matches)
 
 provides_service: ""   # default ""; the service name this app BACKS (e.g. wallet, llm)
 
@@ -77,6 +81,18 @@ keys live on the host — never in the image or repo); a declared-but-missing
 secret warns and is skipped rather than blocking the deploy. See
 [`examples/loom-llm`](../examples/loom-llm) — a bring-your-own-key LLM backend
 that declares `provides_service: llm` and `secrets: [ANTHROPIC_API_KEY]`.
+
+### Per-app authorization: `allow` (gated tier)
+`access: gated` alone means *any* SSO-authenticated user may reach the app.
+`allow.users` / `allow.groups` narrows that to specific people: Loom generates
+header-matcher routers on the shared proxy that check the `Remote-User` /
+`Remote-Groups` headers the edge SSO injects — a match on **either** list lets
+the request through; every other (authenticated) user gets **403**. Empty
+lists (the default) keep the open behaviour. The check applies to the public
+hostname only: the local `*.loom.localhost` URL is operator access and stays
+open, which also keeps health probes working. "Adding a user" happens at your
+SSO (Authelia/authentik/…), not in Loom; inside the app,
+`loom_sdk.identity(headers)` still gives you who is calling for finer checks.
 
 ### Reserved: `semantics`
 `semantics` on a capability or dataset is **accepted and stored but not yet acted

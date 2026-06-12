@@ -147,3 +147,43 @@ def test_llm_is_a_known_service():
     out = contract.parse_consumes({"consumes": [{"service": "llm"}]})
     assert out[0]["service"] == "llm"
     assert "llm" in contract.KNOWN_SERVICES
+
+
+def test_allow_parses_users_and_groups():
+    from loom import contract
+    out = contract.parse_allow({"access": "gated",
+                                "allow": {"users": ["jon"], "groups": ["family", "admins"]}})
+    assert out == {"users": ["jon"], "groups": ["family", "admins"]}
+    assert contract.parse_allow({}) == {"users": [], "groups": []}
+
+
+def test_allow_rejects_rule_injection():
+    import pytest
+    from loom import contract
+    from loom.util import LoomError
+    with pytest.raises(LoomError, match="quotes/backticks"):
+        contract.parse_allow({"access": "gated",
+                              "allow": {"users": ["jo`) || Host(`evil"]}})
+
+
+def test_route_file_with_allow_writes_authz_routers(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    from loom import proxy
+    cfg = {"base_domain": "loom.localhost", "public_domain": "loom.example.com"}
+    proxy.write_route(cfg, "fam", "loom-fam", 80,
+                      allow={"users": ["jon"], "groups": ["family"]})
+    text = (tmp_path / "proxy" / "dynamic" / "app-fam.yml").read_text()
+    assert "Header(`Remote-User`, `jon`)" in text
+    assert "HeaderRegexp(`Remote-Groups`" in text and "family" in text
+    assert "fam-deny" in text and "255.255.255.255/32" in text
+    # local hostname router carries no matcher (operator + health probe path)
+    assert 'rule: "Host(`fam.loom.localhost`)"' in text
+
+
+def test_route_file_without_allow_unchanged(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    from loom import proxy
+    cfg = {"base_domain": "loom.localhost", "public_domain": ""}
+    proxy.write_route(cfg, "plain", "loom-plain", 80)
+    text = (tmp_path / "proxy" / "dynamic" / "app-plain.yml").read_text()
+    assert "deny" not in text and "priority" not in text

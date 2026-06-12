@@ -351,6 +351,9 @@ async function showApp(name){
         <div><h3>services</h3><ul>
           ${d.provides_service?`<li><b>provides</b> ${esc(d.provides_service)}</li>`:''}
           ${consumes}</ul>
+          ${(d.allow.users.length||d.allow.groups.length)?`<h3>allowed (gated)</h3><ul>
+            ${d.allow.users.length?`<li><b>users</b> <span>${d.allow.users.map(esc).join(', ')}</span></li>`:''}
+            ${d.allow.groups.length?`<li><b>groups</b> <span>${d.allow.groups.map(esc).join(', ')}</span></li>`:''}</ul>`:''}
           ${d.secrets.length?`<h3>secrets</h3><ul><li><span>${d.secrets.map(esc).join(', ')}</span></li></ul>`:''}</div>
         <div><h3>data</h3><ul>${data}</ul>
           <h3>usage</h3><ul id="detail-stats"><li><span>…</span></li></ul></div>
@@ -363,9 +366,20 @@ async function showApp(name){
       </div>`;
     api('/api/stats').then(s=>{
       const m=s[name];
-      $('#detail-stats').innerHTML=m
+      $('#detail-stats').innerHTML=(m
         ?`<li><span>cpu</span> ${esc(m.cpu)}</li><li><span>mem</span> ${esc(m.mem)} (${esc(m.mem_pct)})</li><li><span>net</span> ${esc(m.net)}</li>`
-        :'<li><span>no live container stats</span></li>';
+        :'<li><span>no live container stats</span></li>')
+        +'<li id="detail-traffic"><span>traffic …</span></li>';
+      return api('/api/traffic');
+    }).then(t=>{
+      const r=t&&t[name];
+      const el=$('#detail-traffic');
+      if(el)el.innerHTML=r
+        ?`<span>last hour</span> ${r.requests} req · ${r.avg_ms}ms avg`+
+         `${r.errors_5xx?` · <b style="color:var(--bad)">${r.errors_5xx}×5xx</b>`:''}`+
+         `${r.errors_4xx?` · ${r.errors_4xx}×4xx`:''}`+
+         `${r.denied?` · ${r.denied} denied`:''}`
+        :'<span>no requests in the last hour</span>';
     }).catch(()=>{});
   }catch(e){$('#drawer-html').innerHTML='';$('#drawer-body').textContent='detail unavailable: '+e.message}
 }

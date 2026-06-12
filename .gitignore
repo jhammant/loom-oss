@@ -21,3 +21,6 @@ dist/
 proxy/gateway/edge-loom.yml
 proxy/gateway/edge-loom-gated.yml
 cli/dist/
+
+# Traefik access log (read by loom admin for traffic stats)
+proxy/logs/

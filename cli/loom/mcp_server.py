@@ -61,6 +61,76 @@ TOOLS = [
     },
 ]
 
+# Platform-administration tools, served ONLY with `loom mcp --admin` (the
+# agent-operator mode: Claude runs the fleet, not just calls it). Deploy takes
+# a directory path on THIS host — the MCP server binds loopback by default,
+# and --admin refuses to start on a non-loopback host.
+ADMIN_TOOLS = [
+    {
+        "name": "loom_fleet",
+        "description": "List every deployed app with live status, health, URLs, runtime, tier.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "loom_deploy",
+        "description": "Deploy (or redeploy) the app at a local directory path containing fleet.app.yaml.",
+        "inputSchema": {"type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"]},
+    },
+    {
+        "name": "loom_stop",
+        "description": "Stop a running app (keeps it deployed).",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}},
+                        "required": ["name"]},
+    },
+    {
+        "name": "loom_start",
+        "description": "Start a stopped app.",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}},
+                        "required": ["name"]},
+    },
+    {
+        "name": "loom_remove",
+        "description": "Remove an app from the fleet entirely (container, route, index).",
+        "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}},
+                        "required": ["name"]},
+    },
+    {
+        "name": "loom_services",
+        "description": "The shared-services fabric: providers, consumers, grants, data federation.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "loom_traffic",
+        "description": "Per-app traffic from the proxy access log: requests, avg latency, errors.",
+        "inputSchema": {"type": "object",
+                        "properties": {"window_s": {"type": "integer", "default": 3600}}},
+    },
+]
+
+
+def _call_admin_tool(cfg: dict, name: str, args: dict):
+    from . import admin
+    from pathlib import Path
+    if name == "loom_fleet":
+        return admin.fleet_snapshot(cfg)
+    if name == "loom_deploy":
+        entry = admin.deploy_dir(cfg, Path(args["path"]).expanduser().resolve())
+        return {"ok": True, "name": entry["name"], "url": entry["url"],
+                "public_url": entry.get("public_url")}
+    if name == "loom_stop":
+        admin.stop_app(cfg, args["name"]); return {"ok": True}
+    if name == "loom_start":
+        admin.start_app(cfg, args["name"]); return {"ok": True}
+    if name == "loom_remove":
+        admin.remove_app(cfg, args["name"]); return {"ok": True}
+    if name == "loom_services":
+        return admin.services_snapshot(cfg)
+    if name == "loom_traffic":
+        return admin.fleet_traffic(cfg, window_s=int(args.get("window_s", 3600)))
+    raise LoomError(f"unknown admin tool '{name}'")
+
 
 # --- the operations ------------------------------------------------------------
 
@@ -152,7 +222,7 @@ def _openapi(base_url: str) -> dict:
 
 # --- HTTP / JSON-RPC plumbing ---------------------------------------------------
 
-def _rpc(req: dict) -> dict | None:
+def _rpc(req: dict, cfg: dict | None = None, admin: bool = False) -> dict | None:
     mid = req.get("id")
     method = req.get("method")
     params = req.get("params") or {}
@@ -169,10 +239,16 @@ def _rpc(req: dict) -> dict | None:
     if method == "ping":
         return result({})
     if method == "tools/list":
-        return result({"tools": TOOLS})
+        return result({"tools": TOOLS + (ADMIN_TOOLS if admin else [])})
     if method == "tools/call":
+        name = params.get("name")
         try:
-            out = _call_tool(params.get("name"), params.get("arguments") or {})
+            if any(t["name"] == name for t in ADMIN_TOOLS):
+                if not admin:
+                    raise LoomError(f"'{name}' needs `loom mcp --admin`")
+                out = _call_admin_tool(cfg or {}, name, params.get("arguments") or {})
+            else:
+                out = _call_tool(name, params.get("arguments") or {})
             return result({"content": [{"type": "text", "text": json.dumps(out)}]})
         except LoomError as e:
             return result({"isError": True, "content": [{"type": "text", "text": str(e)}]})
@@ -192,7 +268,7 @@ def _rpc(req: dict) -> dict | None:
     return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": f"method not found: {method}"}}
 
 
-def make_handler(base_url: str):
+def make_handler(base_url: str, cfg: dict | None = None, admin: bool = False):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass  # quiet
@@ -237,7 +313,7 @@ def make_handler(base_url: str):
                 except (LoomError, KeyError) as e:
                     return self._send(400, {"error": str(e)})
             if self.path == "/mcp":
-                resp = _rpc(payload)
+                resp = _rpc(payload, cfg, admin)
                 if resp is None:
                     return self._send(202, {})  # notification accepted
                 return self._send(200, resp)
@@ -246,10 +322,14 @@ def make_handler(base_url: str):
     return Handler
 
 
-def serve(cfg: dict, host: str = "127.0.0.1", port: int = 7878) -> None:
+def serve(cfg: dict, host: str = "127.0.0.1", port: int = 7878,
+          admin: bool = False) -> None:
+    if admin and host not in ("127.0.0.1", "localhost"):
+        raise LoomError("--admin is loopback-only: it can deploy and remove apps")
     base_url = f"http://{host}:{port}"
-    httpd = ThreadingHTTPServer((host, port), make_handler(base_url))
-    ok(f"loom-library MCP + OpenAPI on {base_url}  (POST /mcp · GET /openapi.json)")
+    httpd = ThreadingHTTPServer((host, port), make_handler(base_url, cfg, admin))
+    mode = " +ADMIN tools (deploy/stop/start/remove)" if admin else ""
+    ok(f"loom-library MCP + OpenAPI on {base_url}  (POST /mcp · GET /openapi.json){mode}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

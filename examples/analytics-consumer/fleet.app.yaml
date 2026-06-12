@@ -1,0 +1,14 @@
+name: analytics-consumer
+runtime: python
+port: 3000
+access: public
+
+manifest_version: 2
+metadata:
+  description: Demo app that tracks page views in the shared analytics service via the Loom SDK.
+  tags: [demo, analytics, sdk]
+health:
+  path: /health
+consumes:
+  - service: analytics
+    scope: track
