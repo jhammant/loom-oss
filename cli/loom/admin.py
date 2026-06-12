@@ -89,6 +89,45 @@ def _entry(name: str) -> dict:
     return entry
 
 
+def config_view(cfg: dict) -> dict:
+    """The config as shown in the console: values from fleet/config.json with
+    secret material masked, plus where to edit it."""
+    from .config import paths
+    shown = {k: ("•••" if k == "service_secret" and v else v)
+             for k, v in cfg.items()}
+    secrets_file = paths().fleet / "secrets.json"
+    secret_names = []
+    if secrets_file.exists():
+        try:
+            secret_names = sorted(json.loads(secrets_file.read_text()))
+        except Exception:
+            pass
+    return {"config": shown,
+            "config_file": str(paths().config_file),
+            "secrets_file": str(secrets_file),
+            "secret_names": secret_names}  # names only — values never leave disk
+
+
+def import_repo(url: str, root: Path) -> dict:
+    """Clone a git repo into the scan root so it shows up as a candidate.
+    Accepts https/ssh git URLs and GitHub shorthand (user/repo)."""
+    import subprocess
+    url = url.strip()
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", url):
+        url = f"https://github.com/{url}.git"
+    if not re.match(r"^(https://|git@|ssh://)", url):
+        raise LoomError(f"not a git URL: {url}")
+    name = re.sub(r"\.git$", "", url.rstrip("/").rsplit("/", 1)[-1])
+    dest = root / name
+    if dest.exists():
+        raise LoomError(f"{dest} already exists")
+    r = subprocess.run(["git", "clone", "--depth", "1", url, str(dest)],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        raise LoomError(f"git clone failed: {(r.stderr or '').strip()[-300:]}")
+    return {"path": str(dest), "dir": name}
+
+
 def fleet_snapshot(cfg: dict) -> list[dict]:
     """Registry entries with live status reconciled, shaped for the UI."""
     entries = registry.all_apps()
@@ -205,6 +244,8 @@ def make_handler(cfg: dict, default_root: Path):
             if u.path == "/api/scan":
                 root = Path(q.get("root", [str(default_root)])[0]).expanduser()
                 return self._send(200, {"root": str(root), "candidates": scan(root)})
+            if u.path == "/api/config":
+                return self._send(200, config_view(cfg))
             if u.path == "/api/logs":
                 try:
                     text = app_logs(cfg, q.get("app", [""])[0],
@@ -239,6 +280,10 @@ def make_handler(cfg: dict, default_root: Path):
                     return self._send(200, {"ok": True, "name": entry["name"],
                                             "url": entry["url"],
                                             "public_url": entry.get("public_url")})
+                if self.path == "/api/import":
+                    root = Path(payload.get("root") or default_root).expanduser()
+                    return self._send(200, {"ok": True,
+                                            **import_repo(payload["url"], root)})
                 if self.path in ("/api/stop", "/api/start", "/api/remove"):
                     name = payload["name"]
                     {"/api/stop": stop_app, "/api/start": start_app,

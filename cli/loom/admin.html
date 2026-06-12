@@ -149,7 +149,7 @@ aside .root input{
 <header>
   <div class="wordmark">l<em>oo</em>m</div>
   <div class="statline" id="stats">…</div>
-  <div class="right" id="ctx"></div>
+  <div class="right"><span id="ctx"></span> · <a href="#" onclick="showConfig();return false">config</a></div>
 </header>
 <div id="threads"></div>
 
@@ -171,6 +171,10 @@ aside .root input{
     <div class="root">
       <input id="root" value="" spellcheck="false">
       <button onclick="rescan()">scan</button>
+    </div>
+    <div class="root">
+      <input id="giturl" placeholder="import: git URL or user/repo" spellcheck="false">
+      <button onclick="importRepo(this)">clone</button>
     </div>
     <div id="cands"></div>
   </aside>
@@ -305,6 +309,33 @@ function deployNew(ev,path){
     .catch(e=>toast('deploy: '+e.message,true))
     .finally(()=>{refresh();rescan()});
   return false;
+}
+
+async function importRepo(btn){
+  const url=$('#giturl').value.trim();
+  if(!url)return;
+  btn.disabled=true;btn.innerHTML='<span class="spin">◌</span>';
+  try{
+    const d=await api('/api/import',{method:'POST',
+      body:JSON.stringify({url,root:$('#root').value})});
+    toast(`cloned → ${d.path}`);$('#giturl').value='';
+  }catch(e){toast('import: '+e.message,true)}
+  btn.disabled=false;btn.textContent='clone';
+  rescan();
+}
+
+async function showConfig(){
+  $('#drawer-title').textContent='fleet config';
+  $('#drawer-body').textContent='…';
+  $('#drawer').classList.add('open');
+  try{
+    const d=await api('/api/config');
+    const secrets=d.secret_names.length?d.secret_names.join(', '):'(none)';
+    $('#drawer-body').textContent=
+      `# ${d.config_file}   (edit there, then redeploy/restart as needed)\n`+
+      `# secrets in ${d.secrets_file}: ${secrets}  (names only — values stay on disk)\n\n`+
+      JSON.stringify(d.config,null,2);
+  }catch(e){$('#drawer-body').textContent='config unavailable: '+e.message}
 }
 
 async function showLogs(name){

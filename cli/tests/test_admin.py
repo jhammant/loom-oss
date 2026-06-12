@@ -133,3 +133,36 @@ def test_admin_deploy_rejects_bad_path(server):
         assert False, "expected 400"
     except urllib.error.HTTPError as e:
         assert e.code == 400
+
+
+# --- config view + git import -------------------------------------------------
+
+def test_config_view_masks_secret_values(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    (tmp_path / "fleet").mkdir()
+    (tmp_path / "fleet" / "secrets.json").write_text('{"ANTHROPIC_API_KEY": "sk-real"}')
+    view = admin.config_view({"base_domain": "x", "service_secret": "topsecret"})
+    assert view["config"]["service_secret"] == "•••"
+    assert view["secret_names"] == ["ANTHROPIC_API_KEY"]
+    assert "sk-real" not in json.dumps(view)
+
+
+def test_import_repo_expands_shorthand_and_validates(tmp_path, monkeypatch):
+    import subprocess
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        class R: returncode = 0; stderr = ""
+        return R()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    out = admin.import_repo("someuser/cool-app", tmp_path)
+    assert out["path"] == str(tmp_path / "cool-app")
+    assert calls[0][:4] == ["git", "clone", "--depth", "1"]
+    assert calls[0][4] == "https://github.com/someuser/cool-app.git"
+    with pytest.raises(LoomError, match="not a git URL"):
+        admin.import_repo("ftp://nope", tmp_path)
+    (tmp_path / "exists").mkdir()
+    with pytest.raises(LoomError, match="already exists"):
+        admin.import_repo("https://github.com/x/exists.git", tmp_path)
