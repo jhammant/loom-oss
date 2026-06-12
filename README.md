@@ -69,6 +69,13 @@ package.json / index.html / pyproject). Deploying a candidate with no manifest
 writes a minimal `fleet.app.yaml` next to the app first, then deploys it. It
 binds `127.0.0.1` and refuses non-loopback callers.
 
+**Securing it:** `loom admin --set-password` sets a username + password
+(stored as a PBKDF2-SHA256 hash in the gitignored `fleet/secrets.json` —
+never the password itself). Once set, every request requires HTTP Basic
+auth, and `loom admin --host <addr>` may bind beyond loopback (LAN /
+tailnet) — front it with TLS (`tailscale serve`, your edge proxy) on
+untrusted networks. Without credentials the console stays loopback-only.
+
 ## The manifest
 
 Every app declares itself in one `fleet.app.yaml`. The four v1 fields are all you need:

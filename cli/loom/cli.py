@@ -291,7 +291,16 @@ def cmd_gateway(args) -> int:
 def cmd_admin(args) -> int:
     from . import admin
     cfg = load_config()
-    admin.serve(cfg, port=args.port,
+    if args.set_password:
+        import getpass
+        username = input("admin username: ").strip()
+        password = getpass.getpass("admin password (min 8 chars): ")
+        if password != getpass.getpass("repeat password: "):
+            raise LoomError("passwords do not match")
+        admin.set_credentials(username, password)
+        ok("admin credentials saved to fleet/secrets.json (hash only)")
+        return 0
+    admin.serve(cfg, host=args.host, port=args.port,
                 root=Path(args.root).expanduser() if args.root else None,
                 open_browser=not args.no_open)
     return 0
@@ -338,8 +347,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     ad = sub.add_parser("admin", help="open the local fleet console (web UI)")
     ad.add_argument("--port", type=int, default=7879)
+    ad.add_argument("--host", default="127.0.0.1",
+                    help="bind address; beyond loopback requires --set-password first")
     ad.add_argument("--root", help="directory to scan for deployable apps (default ~/dev)")
     ad.add_argument("--no-open", action="store_true", help="don't open the browser")
+    ad.add_argument("--set-password", action="store_true",
+                    help="set admin username/password (PBKDF2 hash in fleet/secrets.json)")
     ad.set_defaults(func=cmd_admin)
 
     dt = sub.add_parser("data", help="inspect the data-federation fabric")

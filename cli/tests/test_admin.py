@@ -166,3 +166,60 @@ def test_import_repo_expands_shorthand_and_validates(tmp_path, monkeypatch):
     (tmp_path / "exists").mkdir()
     with pytest.raises(LoomError, match="already exists"):
         admin.import_repo("https://github.com/x/exists.git", tmp_path)
+
+
+# --- auth -----------------------------------------------------------------------
+
+def _basic(user, pw):
+    import base64
+    return "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+
+
+def test_password_hash_roundtrip():
+    rec = admin.hash_password("hunter2hunter2", iterations=1000)
+    assert admin.verify_password("hunter2hunter2", rec)
+    assert not admin.verify_password("wrong-password", rec)
+
+
+def test_set_credentials_validates_and_writes(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    with pytest.raises(LoomError, match="at least 8"):
+        admin.set_credentials("jon", "short")
+    admin.set_credentials("jon", "longenough")
+    creds = admin.load_credentials()
+    assert creds["username"] == "jon"
+    assert "longenough" not in (tmp_path / "fleet" / "secrets.json").read_text()
+    assert admin.check_basic_auth(_basic("jon", "longenough"), creds)
+    assert not admin.check_basic_auth(_basic("jon", "nope-nope"), creds)
+    assert not admin.check_basic_auth(_basic("eve", "longenough"), creds)
+    assert not admin.check_basic_auth(None, creds)
+
+
+def test_server_enforces_basic_auth(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(admin, "fleet_snapshot", lambda cfg: [])
+    creds = {"username": "jon", **admin.hash_password("longenough", iterations=1000)}
+    cfg = {"base_domain": "x", "default_target": "local", "public_domain": ""}
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0),
+                                admin.make_handler(cfg, tmp_path, creds))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    try:
+        try:
+            _get(base + "/api/fleet")
+            assert False, "expected 401"
+        except urllib.error.HTTPError as e:
+            assert e.code == 401
+            assert e.headers["WWW-Authenticate"].startswith("Basic")
+        req = urllib.request.Request(base + "/api/fleet",
+                                     headers={"Authorization": _basic("jon", "longenough")})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert r.getcode() == 200
+    finally:
+        httpd.shutdown()
+
+
+def test_remote_bind_requires_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("LOOM_HOME", str(tmp_path))
+    with pytest.raises(LoomError, match="set-password"):
+        admin.serve({"base_domain": "x"}, host="0.0.0.0", open_browser=False)

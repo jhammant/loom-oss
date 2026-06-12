@@ -8,15 +8,27 @@ dirs that already carry a fleet.app.yaml, or whose runtime Loom can infer
 no manifest writes a fleet.app.yaml next to the app first (the manifest
 always lives with the app — that's the contract), then deploys it.
 
-This is the LOCAL admin for a single fleet. It binds 127.0.0.1 and refuses
-non-loopback callers; it is not the hosted multi-tenant dashboard (that is
-a commercial-product concern, see OPEN-CORE.md).
+This is the LOCAL admin for a single fleet — not the hosted multi-tenant
+dashboard (a commercial-product concern, see OPEN-CORE.md). Security model:
+
+  * No credentials configured → binds 127.0.0.1 and refuses non-loopback
+    callers. `--host` beyond loopback is refused.
+  * `loom admin --set-password` stores username + PBKDF2-SHA256 password
+    hash in fleet/secrets.json (gitignored). From then on every request
+    needs HTTP Basic auth (timing-safe verify, delay on failure), and
+    `--host` may bind beyond loopback (LAN/tailnet) — front it with TLS
+    (e.g. tailscale serve / your edge proxy) if the network is untrusted.
 """
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import json
 import re
+import secrets as pysecrets
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -26,10 +38,74 @@ import yaml
 from . import dockercmd, gateway, harvester, library, registry
 from .manifest import load_manifest
 from .targets import get_target
-from .util import LoomError, ok
+from .util import LoomError, info, ok
 
 SKIP_DIRS = {"node_modules", "dist", "build", "out", "venv", "__pycache__",
              ".git", ".venv", ".next", ".cache", "target"}
+
+PBKDF2_ITERATIONS = 600_000
+
+
+# --- credentials -----------------------------------------------------------------
+
+def _secrets_file() -> Path:
+    from .config import paths
+    return paths().fleet / "secrets.json"
+
+
+def hash_password(password: str, salt: str | None = None,
+                  iterations: int = PBKDF2_ITERATIONS) -> dict:
+    salt = salt or pysecrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(),
+                                 bytes.fromhex(salt), iterations)
+    return {"salt": salt, "iterations": iterations, "hash": digest.hex()}
+
+
+def verify_password(password: str, rec: dict) -> bool:
+    got = hashlib.pbkdf2_hmac("sha256", password.encode(),
+                              bytes.fromhex(rec["salt"]), int(rec["iterations"]))
+    return hmac.compare_digest(got.hex(), rec["hash"])
+
+
+def set_credentials(username: str, password: str) -> None:
+    """Store admin credentials (PBKDF2 hash, never the password) in
+    fleet/secrets.json — gitignored, server-side only."""
+    if not username or not password:
+        raise LoomError("username and password must be non-empty")
+    if len(password) < 8:
+        raise LoomError("password must be at least 8 characters")
+    f = _secrets_file()
+    store = json.loads(f.read_text()) if f.exists() else {}
+    store["ADMIN_AUTH"] = {"username": username, **hash_password(password)}
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(store, indent=2) + "\n")
+    try:
+        f.chmod(0o600)
+    except OSError:
+        pass
+
+
+def load_credentials() -> dict | None:
+    f = _secrets_file()
+    if not f.exists():
+        return None
+    try:
+        return json.loads(f.read_text()).get("ADMIN_AUTH")
+    except Exception:
+        return None
+
+
+def check_basic_auth(header: str | None, creds: dict) -> bool:
+    """Validate an Authorization header against stored credentials.
+    Timing-safe on both username and password."""
+    if not header or not header.startswith("Basic "):
+        return False
+    try:
+        user, _, password = base64.b64decode(header[6:]).decode().partition(":")
+    except Exception:
+        return False
+    user_ok = hmac.compare_digest(user, creds["username"])
+    return verify_password(password, creds) and user_ok
 
 
 # --- fleet operations (the same primitives the CLI verbs use) -------------------
@@ -211,7 +287,8 @@ def scan(root: Path) -> list[dict]:
 
 # --- HTTP ------------------------------------------------------------------------
 
-def make_handler(cfg: dict, default_root: Path):
+def make_handler(cfg: dict, default_root: Path, creds: dict | None = None,
+                 allow_remote: bool = False):
     html = (Path(__file__).parent / "admin.html").read_text()
 
     class Handler(BaseHTTPRequestHandler):
@@ -221,17 +298,32 @@ def make_handler(cfg: dict, default_root: Path):
         def _loopback(self) -> bool:
             return self.client_address[0] in ("127.0.0.1", "::1")
 
-        def _send(self, code, obj, ctype="application/json"):
+        def _send(self, code, obj, ctype="application/json", headers=None):
             body = (json.dumps(obj) if ctype == "application/json" else obj).encode()
             self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
+        def _gate(self) -> bool:
+            """Both checks, in order: network (loopback unless explicitly
+            opened) then credentials (always, once configured)."""
+            if not allow_remote and not self._loopback():
+                self._send(403, {"error": "loopback only"})
+                return False
+            if creds and not check_basic_auth(self.headers.get("Authorization"), creds):
+                time.sleep(0.4)  # blunt brute-force throttle
+                self._send(401, {"error": "authentication required"},
+                           headers={"WWW-Authenticate": 'Basic realm="loom admin"'})
+                return False
+            return True
+
         def do_GET(self):
-            if not self._loopback():
-                return self._send(403, {"error": "loopback only"})
+            if not self._gate():
+                return
             u = urllib.parse.urlparse(self.path)
             q = urllib.parse.parse_qs(u.query)
             if u.path in ("/", "/admin"):
@@ -256,8 +348,8 @@ def make_handler(cfg: dict, default_root: Path):
             return self._send(404, {"error": "not found"})
 
         def do_POST(self):
-            if not self._loopback():
-                return self._send(403, {"error": "loopback only"})
+            if not self._gate():
+                return
             length = int(self.headers.get("Content-Length", 0))
             try:
                 payload = json.loads(self.rfile.read(length) or b"{}")
@@ -298,12 +390,22 @@ def make_handler(cfg: dict, default_root: Path):
 
 def serve(cfg: dict, host: str = "127.0.0.1", port: int = 7879,
           root: Path | None = None, open_browser: bool = True) -> None:
-    if host != "127.0.0.1":
-        raise LoomError("loom admin is local-only; it binds 127.0.0.1")
+    creds = load_credentials()
+    remote = host not in ("127.0.0.1", "localhost")
+    if remote and not creds:
+        raise LoomError(
+            "binding beyond loopback needs credentials: run "
+            "`loom admin --set-password` first"
+        )
     root = root or Path.home() / "dev"
-    httpd = ThreadingHTTPServer((host, port), make_handler(cfg, root))
+    httpd = ThreadingHTTPServer((host, port),
+                                make_handler(cfg, root, creds, allow_remote=remote))
     url = f"http://{host}:{port}"
-    ok(f"loom admin on {url}  (scanning {root})")
+    guard = f"basic auth as '{creds['username']}'" if creds else "loopback-only, no auth"
+    ok(f"loom admin on {url}  (scanning {root}; {guard})")
+    if remote:
+        info("remote bind: plain HTTP — front with TLS (tailscale serve / edge proxy) "
+             "on untrusted networks")
     if open_browser:
         import webbrowser
         threading.Timer(0.4, webbrowser.open, args=(url,)).start()
