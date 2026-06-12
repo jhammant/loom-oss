@@ -1,6 +1,6 @@
 [project]
 name = "loomhost"
-version = "0.1.0"
+version = "0.2.0"
 description = "Loom — an agent-native, additive app host. Deploy small apps; each is instantly routed, discoverable, agent-callable, and service-consuming."
 authors = [{ name = "Jon Hammant" }]
 license = { text = "BUSL-1.1" }
