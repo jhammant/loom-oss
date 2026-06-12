@@ -223,3 +223,67 @@ def test_remote_bind_requires_credentials(tmp_path, monkeypatch):
     monkeypatch.setenv("LOOM_HOME", str(tmp_path))
     with pytest.raises(LoomError, match="set-password"):
         admin.serve({"base_domain": "x"}, host="0.0.0.0", open_browser=False)
+
+
+# --- app detail + services fabric + stats ----------------------------------------
+
+def test_app_detail_shapes_contract(monkeypatch):
+    from loom import library
+    monkeypatch.setattr(registry, "get", lambda n: {
+        "name": "shop", "status": "running", "runtime": "python", "access": "public",
+        "url": "https://shop.test", "public_url": None, "source_path": "/x",
+        "image": "loom/shop", "grants": [{"service": "wallet", "provider": "loom-wallet",
+                                          "scope": "charge"}],
+        "data_grants": [],
+        "contract": {"metadata": {"description": "a shop", "tags": ["demo"]},
+                     "health": {"path": "/health"}, "health_status": "ok",
+                     "capabilities": [{"id": "buy", "kind": "http", "path": "/buy"}],
+                     "consumes": [{"service": "wallet", "scope": "charge"}],
+                     "provides_service": "", "secrets": ["STRIPE_KEY"],
+                     "data": {"provides": [], "consumes": []}},
+    })
+    monkeypatch.setattr(library, "get", lambda n: {"operations": [
+        {"id": "buy", "method": "POST", "path": "/buy"}]})
+    d = admin.app_detail({}, "shop")
+    assert d["description"] == "a shop"
+    assert d["operations"][0]["method"] == "POST"
+    assert d["grants"][0]["provider"] == "loom-wallet"
+    assert d["secrets"] == ["STRIPE_KEY"]
+    assert d["provides_service"] is None
+
+
+def test_services_snapshot_resolved_and_unresolved(monkeypatch):
+    monkeypatch.setattr(registry, "all_apps", lambda: [
+        {"name": "loom-wallet", "contract": {"provides_service": "wallet"}},
+        {"name": "shop", "grants": [{"service": "wallet", "provider": "loom-wallet",
+                                     "scope": "charge"}],
+         "contract": {"consumes": [{"service": "wallet", "scope": "charge"}]}},
+        {"name": "wisher", "grants": [],
+         "contract": {"consumes": [{"service": "email", "scope": ""}]}},
+        {"name": "feddy", "data_grants": [{"dataset": "orders", "provider": "shop"}]},
+    ])
+    snap = admin.services_snapshot({})
+    by = {s["service"]: s for s in snap["services"]}
+    assert by["wallet"]["provider"] == "loom-wallet"
+    assert by["wallet"]["consumers"] == [{"app": "shop", "scope": "charge",
+                                          "resolved": True}]
+    assert by["email"]["provider"] is None
+    assert by["email"]["consumers"][0] == {"app": "wisher", "scope": "",
+                                           "resolved": False}
+    assert snap["data_grants"] == [{"consumer": "feddy", "dataset": "orders",
+                                    "provider": "shop"}]
+
+
+def test_fleet_stats_parses_docker_lines(monkeypatch):
+    from loom import dockercmd
+
+    class R:
+        stdout = ('{"Name":"loom-shop","CPUPerc":"1.2%","MemUsage":"30MiB / 8GiB",'
+                  '"MemPerc":"0.4%","NetIO":"1kB / 2kB"}\n'
+                  '{"Name":"unrelated","CPUPerc":"9%"}\n'
+                  'not-json\n')
+
+    monkeypatch.setattr(dockercmd, "run", lambda *a, **k: R())
+    s = admin.fleet_stats({})
+    assert s == {"shop": {"cpu": "1.2%", "mem": "30MiB / 8GiB",
+                          "mem_pct": "0.4%", "net": "1kB / 2kB"}}

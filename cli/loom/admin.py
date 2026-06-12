@@ -232,6 +232,93 @@ def fleet_snapshot(cfg: dict) -> list[dict]:
     return out
 
 
+def app_detail(cfg: dict, name: str) -> dict:
+    """Everything the console shows when you click an app: the registry
+    entry's operational fields + contract, and the Library's harvested
+    operations. Grants carry no token material — safe to surface."""
+    entry = _entry(name)
+    rec = library.get(name) or {}
+    contract = entry.get("contract") or {}
+    return {
+        "name": name,
+        "status": entry.get("status"),
+        "runtime": entry.get("runtime"), "target": entry.get("target", "local"),
+        "access": entry.get("access"),
+        "urls": {"local": entry.get("url"), "public": entry.get("public_url"),
+                 "tailnet": entry.get("tailnet_url"),
+                 "custom": entry.get("custom_url")},
+        "source_path": entry.get("source_path"),
+        "image": entry.get("image"),
+        "description": (contract.get("metadata") or {}).get("description", ""),
+        "tags": (contract.get("metadata") or {}).get("tags", []),
+        "health_path": (contract.get("health") or {}).get("path"),
+        "health_status": contract.get("health_status", "unknown"),
+        "capabilities": contract.get("capabilities") or [],
+        "operations": rec.get("operations") or [],
+        "provides_service": contract.get("provides_service") or None,
+        "consumes": contract.get("consumes") or [],
+        "grants": entry.get("grants") or [],
+        "data": contract.get("data") or {"provides": [], "consumes": []},
+        "data_grants": entry.get("data_grants") or [],
+        "secrets": contract.get("secrets") or [],  # names only, by design
+    }
+
+
+def fleet_stats(cfg: dict) -> dict:
+    """Live per-app usage from `docker stats` (local target): CPU%, memory,
+    net I/O. One docker call for the whole fleet; apps on other targets are
+    simply absent."""
+    r = dockercmd.run(["stats", "--no-stream", "--format", "{{json .}}"],
+                      capture=True, check=False)
+    out = {}
+    for line in (r.stdout or "").splitlines():
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        name = d.get("Name", "")
+        if name.startswith("loom-"):
+            out[name[5:]] = {"cpu": d.get("CPUPerc", ""),
+                             "mem": d.get("MemUsage", ""),
+                             "mem_pct": d.get("MemPerc", ""),
+                             "net": d.get("NetIO", "")}
+    return out
+
+
+def services_snapshot(cfg: dict) -> dict:
+    """The shared-services fabric: every service with its live provider and
+    consumers (resolved grants AND unresolved consumes), plus the data-
+    federation grants."""
+    entries = registry.all_apps()
+    services: dict[str, dict] = {}
+
+    def svc(name: str) -> dict:
+        return services.setdefault(name, {"service": name, "provider": None,
+                                           "consumers": []})
+
+    for e in entries:
+        provided = (e.get("contract") or {}).get("provides_service")
+        if provided:
+            svc(provided)["provider"] = e["name"]
+    for e in entries:
+        granted = {g["service"] for g in e.get("grants") or []}
+        for g in e.get("grants") or []:
+            svc(g["service"])["consumers"].append(
+                {"app": e["name"], "scope": g.get("scope", ""), "resolved": True})
+        for c in (e.get("contract") or {}).get("consumes") or []:
+            if c.get("service") and c["service"] not in granted:
+                svc(c["service"])["consumers"].append(
+                    {"app": e["name"], "scope": c.get("scope", ""), "resolved": False})
+
+    data = []
+    for e in entries:
+        for g in e.get("data_grants") or []:
+            data.append({"consumer": e["name"], "dataset": g.get("dataset"),
+                         "provider": g.get("provider")})
+    return {"services": sorted(services.values(), key=lambda s: s["service"]),
+            "data_grants": data}
+
+
 # --- the ~/dev scanner -----------------------------------------------------------
 
 def _dns_name(raw: str) -> str:
@@ -338,6 +425,15 @@ def make_handler(cfg: dict, default_root: Path, creds: dict | None = None,
                 return self._send(200, {"root": str(root), "candidates": scan(root)})
             if u.path == "/api/config":
                 return self._send(200, config_view(cfg))
+            if u.path == "/api/app":
+                try:
+                    return self._send(200, app_detail(cfg, q.get("name", [""])[0]))
+                except LoomError as e:
+                    return self._send(404, {"error": str(e)})
+            if u.path == "/api/services":
+                return self._send(200, services_snapshot(cfg))
+            if u.path == "/api/stats":
+                return self._send(200, fleet_stats(cfg))
             if u.path == "/api/logs":
                 try:
                     text = app_logs(cfg, q.get("app", [""])[0],

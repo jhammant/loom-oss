@@ -126,6 +126,32 @@ aside .root input{
 .cand input[name=name]{width:11ch}.cand input[name=port]{width:7ch}
 .ready{color:var(--ok)}
 
+/* the weave (services fabric) */
+.svc{
+  border:1px solid var(--thread);border-radius:6px;padding:.55rem .8rem;
+  margin-bottom:.5rem;display:flex;gap:.8rem;align-items:baseline;flex-wrap:wrap;
+  background:rgba(21,21,31,.5);
+}
+.svc .sname{font-family:var(--disp);font-style:italic;font-size:1.05rem;color:var(--weft)}
+.svc .arrow{color:var(--ink-dim)}
+.svc a{color:var(--ink)}
+.svc .chip{
+  border:1px solid var(--thread);border-radius:10px;padding:0 .55em;font-size:11px;
+}
+.svc .chip.unresolved{color:var(--warn);border-style:dashed}
+.svc .none{color:var(--bad);font-style:italic}
+
+/* app detail drawer */
+#drawer-html .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1rem}
+#drawer-html h3{
+  font-family:var(--disp);font-weight:500;font-size:.95rem;color:var(--weft);
+  text-transform:lowercase;margin:.2rem 0 .35rem;
+}
+#drawer-html ul{list-style:none;font-size:12px}
+#drawer-html li{padding:.1rem 0;color:var(--ink)}
+#drawer-html li span{color:var(--ink-dim)}
+#drawer-html .desc{color:var(--ink-dim);margin-bottom:.7rem;font-style:italic}
+
 /* logs drawer + toasts */
 #drawer{
   position:fixed;inset:auto 0 0 0;max-height:45vh;background:var(--warp-2);
@@ -158,12 +184,15 @@ aside .root input{
     <h2>the <b>fleet</b></h2>
     <table id="fleet">
       <thead><tr>
-        <th>app</th><th>status</th><th>health</th><th>url</th>
+        <th>app</th><th>status</th><th>health</th><th>cpu</th><th>mem</th><th>url</th>
         <th>runtime</th><th>access</th><th></th>
       </tr></thead>
       <tbody></tbody>
     </table>
     <div class="empty" id="empty" hidden>nothing woven yet — pick something from the right rail.</div>
+
+    <h2 style="margin-top:2rem">the <b>weave</b> — shared services</h2>
+    <div id="weave"><div class="empty">…</div></div>
   </section>
 
   <aside>
@@ -185,6 +214,7 @@ aside .root input{
     <b id="drawer-title"></b>
     <a href="#" onclick="closeDrawer();return false">close ×</a>
   </div>
+  <div id="drawer-html"></div>
   <pre id="drawer-body"></pre>
 </div>
 <div id="toasts"></div>
@@ -224,9 +254,11 @@ async function refresh(){
       const tr=document.createElement('tr');
       tr.style.animationDelay=(i*40)+'ms';
       tr.innerHTML=`
-        <td><b>${esc(a.name)}</b></td>
+        <td><a href="#" onclick="showApp('${esc(a.name)}');return false"><b>${esc(a.name)}</b></a></td>
         <td class="s-${esc(a.status)}"><span class="dot"></span>${esc(a.status)}</td>
         <td class="h-${esc(a.health)}">${esc(a.health)}</td>
+        <td class="stat-cpu" data-app="${esc(a.name)}">…</td>
+        <td class="stat-mem" data-app="${esc(a.name)}">…</td>
         <td class="urls">
           ${a.url?`<a href="${esc(a.url)}" target="_blank">${esc(a.url.replace(/^https?:\/\//,''))}</a>`:'—'}
           ${a.public_url?`<br><a href="${esc(a.public_url)}" target="_blank">${esc(a.public_url.replace(/^https?:\/\//,''))}</a>`:''}
@@ -243,6 +275,99 @@ async function refresh(){
       tb.appendChild(tr);
     });
   }catch(e){toast('fleet: '+e.message,true)}
+  refreshStats();refreshWeave();
+}
+
+async function refreshStats(){
+  try{
+    const s=await api('/api/stats');
+    document.querySelectorAll('.stat-cpu').forEach(td=>{
+      td.textContent=(s[td.dataset.app]||{}).cpu||'—'});
+    document.querySelectorAll('.stat-mem').forEach(td=>{
+      const m=(s[td.dataset.app]||{});
+      td.textContent=m.mem?m.mem.split(' / ')[0]:'—';
+      td.title=m.mem?`${m.mem} (${m.mem_pct}) · net ${m.net}`:''});
+  }catch(e){/* stats are best-effort */}
+}
+
+async function refreshWeave(){
+  try{
+    const d=await api('/api/services');
+    const w=$('#weave');w.innerHTML='';
+    if(!d.services.length&&!d.data_grants.length){
+      w.innerHTML='<div class="empty">no shared services yet — give an app <code>provides_service:</code> or <code>consumes:</code>.</div>';
+      return;
+    }
+    d.services.forEach(s=>{
+      const div=document.createElement('div');div.className='svc';
+      const consumers=s.consumers.length?s.consumers.map(c=>
+        `<span class="chip ${c.resolved?'':'unresolved'}" title="${c.resolved?'resolved grant':'unresolved — no provider at deploy time; redeploy the consumer once one exists'}">
+           <a href="#" onclick="showApp('${esc(c.app)}');return false">${esc(c.app)}</a>${c.scope?` · ${esc(c.scope)}`:''}${c.resolved?'':' ?'}</span>`).join(' ')
+        :'<span style="color:var(--ink-dim)">no consumers</span>';
+      div.innerHTML=`<span class="sname">${esc(s.service)}</span>
+        <span class="arrow">provided by</span>
+        ${s.provider?`<a href="#" onclick="showApp('${esc(s.provider)}');return false"><b>${esc(s.provider)}</b></a>`
+                    :'<span class="none">no live provider</span>'}
+        <span class="arrow">→</span> ${consumers}`;
+      w.appendChild(div);
+    });
+    d.data_grants.forEach(g=>{
+      const div=document.createElement('div');div.className='svc';
+      div.innerHTML=`<span class="sname">data:${esc(g.dataset)}</span>
+        <span class="arrow">from</span> <a href="#" onclick="showApp('${esc(g.provider)}');return false">${esc(g.provider)}</a>
+        <span class="arrow">→</span> <span class="chip"><a href="#" onclick="showApp('${esc(g.consumer)}');return false">${esc(g.consumer)}</a></span>`;
+      w.appendChild(div);
+    });
+  }catch(e){/* weave is best-effort */}
+}
+
+async function showApp(name){
+  $('#drawer-title').textContent=name;
+  $('#drawer-body').textContent='';
+  $('#drawer-html').innerHTML='<div class="empty">…</div>';
+  $('#drawer').classList.add('open');
+  try{
+    const d=await api('/api/app?name='+encodeURIComponent(name));
+    const urls=Object.entries(d.urls).filter(([k,v])=>v)
+      .map(([k,v])=>`<li><span>${k}</span> <a href="${esc(v)}" target="_blank">${esc(v)}</a></li>`).join('')||'<li><span>none</span></li>';
+    const caps=(d.operations.length?d.operations:d.capabilities).map(o=>
+      `<li><b>${esc(o.id)}</b> <span>${esc(o.method||'GET')} ${esc(o.path||'')}</span></li>`).join('')||'<li><span>none declared</span></li>';
+    const consumes=d.consumes.map(c=>{
+      const g=d.grants.find(g=>g.service===c.service);
+      return `<li><b>${esc(c.service)}</b> <span>${g?`→ ${esc(g.provider)}`:'(unresolved)'}${c.scope?` · ${esc(c.scope)}`:''}</span></li>`;
+    }).join('')||'<li><span>nothing</span></li>';
+    const data=[...d.data.provides.map(p=>`<li><b>provides</b> ${esc(p.name)} <span>${esc(p.path||'')}</span></li>`),
+                ...d.data_grants.map(g=>`<li><b>consumes</b> ${esc(g.dataset)} <span>from ${esc(g.provider)}</span></li>`)]
+               .join('')||'<li><span>none</span></li>';
+    $('#drawer-html').innerHTML=`
+      ${d.description?`<div class="desc">${esc(d.description)}${d.tags.length?' · '+d.tags.map(esc).join(', '):''}</div>`:''}
+      <div class="grid">
+        <div><h3>where</h3><ul>${urls}
+          <li><span>source</span> ${esc(d.source_path)}</li>
+          <li><span>image</span> ${esc(d.image||'—')}</li>
+          <li><span>runtime</span> ${esc(d.runtime)} @ ${esc(d.target)} · ${esc(d.access)}</li></ul></div>
+        <div><h3>operations</h3><ul>${caps}</ul>
+          <h3>health</h3><ul><li><span>${esc(d.health_path||'—')}</span> ${esc(d.health_status)}</li></ul></div>
+        <div><h3>services</h3><ul>
+          ${d.provides_service?`<li><b>provides</b> ${esc(d.provides_service)}</li>`:''}
+          ${consumes}</ul>
+          ${d.secrets.length?`<h3>secrets</h3><ul><li><span>${d.secrets.map(esc).join(', ')}</span></li></ul>`:''}</div>
+        <div><h3>data</h3><ul>${data}</ul>
+          <h3>usage</h3><ul id="detail-stats"><li><span>…</span></li></ul></div>
+      </div>
+      <div class="actions" style="justify-content:flex-start;margin-top:.8rem">
+        <button onclick="showLogs('${esc(name)}')">logs</button>
+        ${d.status==='running'?`<button onclick="act('stop','${esc(name)}',this);closeDrawer()">stop</button>`
+                              :`<button onclick="act('start','${esc(name)}',this);closeDrawer()">start</button>`}
+        <button class="danger" onclick="removeApp('${esc(name)}',this);closeDrawer()">remove</button>
+      </div>`;
+    api('/api/stats').then(s=>{
+      const m=s[name];
+      $('#detail-stats').innerHTML=m
+        ?`<li><span>cpu</span> ${esc(m.cpu)}</li><li><span>mem</span> ${esc(m.mem)} (${esc(m.mem_pct)})</li><li><span>net</span> ${esc(m.net)}</li>`
+        :'<li><span>no live container stats</span></li>';
+    }).catch(()=>{});
+  }catch(e){$('#drawer-html').innerHTML='';$('#drawer-body').textContent='detail unavailable: '+e.message}
 }
 
 async function act(verb,name,btn){
@@ -326,6 +451,7 @@ async function importRepo(btn){
 
 async function showConfig(){
   $('#drawer-title').textContent='fleet config';
+  $('#drawer-html').innerHTML='';
   $('#drawer-body').textContent='…';
   $('#drawer').classList.add('open');
   try{
@@ -339,7 +465,8 @@ async function showConfig(){
 }
 
 async function showLogs(name){
-  $('#drawer-title').textContent=name;
+  $('#drawer-title').textContent=name+' — logs';
+  $('#drawer-html').innerHTML='';
   $('#drawer-body').textContent='…';
   $('#drawer').classList.add('open');
   try{const d=await api('/api/logs?app='+encodeURIComponent(name)+'&tail=300');
